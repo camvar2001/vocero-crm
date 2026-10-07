@@ -20,3 +20,17 @@ La prueba verifica:
 - Requests limitados al servidor local del harness.
 
 La prueba de 403 verifica el manejo visual de un rechazo simulado. Autorización, persistencia, token cifrado y polling se validan aparte mediante pruebas unitarias/integración del backend.
+
+## Integración con PostgreSQL aislado
+
+`scripts/e2e-telegram-server.ts` ejercita las funciones reales de credenciales, ingestión y entrega contra la base `postgres` del compose aislado. El fixture usa organización, IDs y token sintéticos; reemplaza `global.fetch` para permitir solo el `sendMessage` de Telegram del fixture y bloquear cualquier otro destino. No inicia Next, poller ni pipeline de IA.
+
+Compilar dentro del checkout:
+
+```sh
+pnpm exec esbuild scripts/e2e-telegram-server.ts --bundle --platform=node --format=esm --alias:@=./src --banner:js="import { createRequire } from 'module'; const require = createRequire(import.meta.url);" --outfile=/tmp/telegram-e2e-server.mjs
+```
+
+Copiar el bundle a `/tmp` del servicio de aplicación del compose **aislado** y ejecutar allí con `TELEGRAM_E2E_ISOLATED=1 CHANNELS=telegram`. Requiere `DATABASE_URL` con hostname exactamente `postgres` y la clave de cifrado configurada para esa base. El arnés falla cerrado si no se cumplen esas condiciones.
+
+No ejecutar este arnés con una base activa de usuario, piloto, desarrollo compartido o producción. Antes de correrlo, confirma que el servicio `postgres` es el fixture aislado y que la app no comparte una red o volumen con una instalación activa. El script borra únicamente la organización aleatoria que crea; ante un error de limpieza, inspecciona solo esa base aislada.

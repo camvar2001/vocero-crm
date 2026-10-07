@@ -3,6 +3,13 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
+import { isChannelEnabled } from "@/server/channels/enabled";
+import { startTelegramPollers, stopTelegramPollers } from "@/server/telegram/poller";
+
+const globalForTelegramRuntime = globalThis as unknown as {
+  __telegramRuntimeStarted?: boolean;
+  __telegramRuntimeShutdown?: Promise<void>;
+};
 
 /**
  * 008 — Aviso al arranque si MEDIA_DIR no es escribible. Sin esto, el primer
@@ -59,4 +66,29 @@ export async function cleanupOrphanRuns(): Promise<void> {
     // La BD puede no estar lista aún (migraciones corren antes del server).
     console.error("[boot] limpieza de corridas huérfanas falló:", err);
   }
+}
+
+/** Start Telegram in the Node runtime without holding up Next's register(). */
+export function startTelegramRuntime(): void {
+  if (!isChannelEnabled("telegram") || globalForTelegramRuntime.__telegramRuntimeStarted) return;
+  globalForTelegramRuntime.__telegramRuntimeStarted = true;
+  const shutdown = () => {
+    if (!globalForTelegramRuntime.__telegramRuntimeShutdown) {
+      globalForTelegramRuntime.__telegramRuntimeShutdown = stopTelegramPollers().catch(() => {
+        console.error("[telegram] shutdown_failed");
+      }).finally(() => {
+        process.off("SIGTERM", onSigterm);
+        process.off("SIGINT", onSigint);
+        globalForTelegramRuntime.__telegramRuntimeStarted = false;
+      });
+    }
+    return globalForTelegramRuntime.__telegramRuntimeShutdown;
+  };
+  const onSigterm = () => { void shutdown(); };
+  const onSigint = () => { void shutdown(); };
+  process.once("SIGTERM", onSigterm);
+  process.once("SIGINT", onSigint);
+  void startTelegramPollers().catch(() => {
+    console.error("[telegram] bootstrap_failed");
+  });
 }

@@ -20,6 +20,8 @@ export const BSUID_PREFIX = "bsuid:";
 export const IG_PREFIX = "ig:";
 /** 017: identidad de Messenger: el Page-Scoped ID (PSID) del remitente. */
 export const FB_PREFIX = "fb:";
+/** 018: Telegram user IDs occupy their own identity namespace. */
+export const TG_PREFIX = "tg:";
 
 // El tipo vive en lib/ porque la interfaz tambien lo necesita; se reexporta
 // aqui para no tocar a quien ya lo importaba de este modulo.
@@ -117,6 +119,17 @@ export async function findWhatsappContact(
 export function parseIdentity(identity: string): ResolvedIdentity | null {
   if (identity.startsWith(IG_PREFIX) || identity.startsWith(FB_PREFIX)) {
     return null;
+  }
+  if (identity.startsWith(TG_PREFIX)) {
+    const userId = identity.slice(TG_PREFIX.length);
+    if (!/^\d{1,20}$/.test(userId)) return null;
+    return {
+      identity,
+      channel: "telegram",
+      phone: null,
+      waUserId: null,
+      profileName: null,
+    };
   }
   if (identity.startsWith(BSUID_PREFIX)) {
     const waUserId = identity.slice(BSUID_PREFIX.length);

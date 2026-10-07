@@ -5,10 +5,11 @@
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { checkMediaDir, cleanupOrphanRuns } = await import(
+    const { checkMediaDir, cleanupOrphanRuns, startTelegramRuntime } = await import(
       "./instrumentation-node"
     );
     await checkMediaDir();
     await cleanupOrphanRuns();
+    startTelegramRuntime();
   }
 }

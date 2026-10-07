@@ -16,6 +16,7 @@ import {
 } from "@/server/ai/actions";
 import { HANDOFF_BACKUP_ACK, matchesHandoffIntent } from "@/server/ai/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
+import { messagesThroughTelegramTrigger } from "@/server/telegram/turn";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { getOffers, mapaDeHuecosParaModelo } from "@/server/agenda/offers";
@@ -92,7 +93,10 @@ async function executeTurn(conversationId: string): Promise<void> {
  * Ejecuta UN turno del agente ahora (el Laboratorio lo llama directo, con
  * debounce 0 y sin pasar por el coalesce).
  */
-export async function runAgentTurn(conversationId: string): Promise<void> {
+export async function runAgentTurn(
+  conversationId: string,
+  options: { telegramTriggerMessageId?: string } = {},
+): Promise<void> {
   if (!isAiConfigured()) return;
 
   const db = getDb();
@@ -119,15 +123,21 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // comportamiento configurado aunque el agente aún no esté encendido.
   if (!conversation.isTest && !profile.enabled) return;
 
-  const history = await db
+  let history = await db
     .select()
     .from(schema.message)
     .where(eq(schema.message.conversationId, conversationId))
     .orderBy(desc(schema.message.createdAt))
     .limit(20);
   history.reverse();
+  if (options.telegramTriggerMessageId) {
+    history = messagesThroughTelegramTrigger(history, options.telegramTriggerMessageId);
+    if (history.length === 0) return;
+  }
   const lastInbound = [...history].reverse().find((m) => m.direction === "in");
   if (!lastInbound) return;
+  if (options.telegramTriggerMessageId && lastInbound.id !== options.telegramTriggerMessageId) return;
+  const telegramTriggerMessageId = conversation.channel === "telegram" ? options.telegramTriggerMessageId : undefined;
 
   // Ventana cerrada: el agente JAMÁS envía texto libre → handoff 'ventana'.
   if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
@@ -231,7 +241,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
                 startUtc: action.startUtc,
                 confirmation: action.reply,
               });
-        await deliverReply(conversation, turn.text);
+        await deliverReply(conversation, turn.text, telegramTriggerMessageId);
         if (turn.ok) {
           publish(organizationId, {
             type: "conversation.updated",
@@ -257,7 +267,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         data: { conversation: { id: conversationId } },
       });
       if (action.reply) {
-        await deliverReply(conversation, action.reply);
+        await deliverReply(conversation, action.reply, telegramTriggerMessageId);
       }
       return;
     }
@@ -267,16 +277,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     case "none":
       return;
     case "reply":
-      await deliverReply(conversation, action.text);
+      await deliverReply(conversation, action.text, telegramTriggerMessageId);
       return;
     case "update_lead": {
       await appendLeadNote(organizationId, conversation.contactId, action.note);
-      if (action.reply) await deliverReply(conversation, action.reply);
+      if (action.reply) await deliverReply(conversation, action.reply, telegramTriggerMessageId);
       return;
     }
     case "handoff": {
       if (action.farewell) {
-        await deliverReply(conversation, action.farewell);
+        await deliverReply(conversation, action.farewell, telegramTriggerMessageId);
       }
       await applyHandoff(conversationId, organizationId, "modelo");
       return;
@@ -289,7 +299,8 @@ type Conversation = typeof schema.conversation.$inferSelect;
 /** Entrega la respuesta: envío real o persistencia sandbox (is_test). */
 async function deliverReply(
   conversation: Conversation,
-  text: string
+  text: string,
+  telegramTriggerMessageId?: string,
 ): Promise<void> {
   if (conversation.isTest) {
     await persistTestOutbound(conversation, text);
@@ -301,6 +312,7 @@ async function deliverReply(
       organizationId: conversation.organizationId,
       text,
       aiGenerated: true,
+      telegramTriggerMessageId,
     });
   } catch (err) {
     if (err instanceof SendError && err.code === "window_closed") {

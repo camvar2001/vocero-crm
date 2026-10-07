@@ -22,7 +22,9 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
     since && !Number.isNaN(since.getTime()) ? since : undefined
   );
   return Response.json({
-    messages: messages.map((r) => serializeMessage(r.message, r.media)),
+    messages: messages.map((r) =>
+      serializeMessage(r.message, r.media, r.telegramDeliveryStatus),
+    ),
   });
 });
 
@@ -31,7 +33,10 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
 const sendSchema = z.union([
   z.object({
     type: z.literal("text").optional(),
-    text: z.string().trim().min(1).max(4096),
+    // Telegram counts Unicode code points, while Zod's max counts UTF-16
+    // code units; allow surrogate pairs here and enforce per-channel below.
+    text: z.string().trim().min(1).max(8192),
+    actionId: z.string().trim().min(8).max(120).optional(),
   }),
   z.object({
     type: z.literal("location"),
@@ -70,6 +75,19 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, sendSchema);
   if (!body.ok) return body.response;
+  if ("text" in body.data) {
+    const conversation = await getConversation(session.organizationId, id);
+    if (!conversation) return apiError(404, "not_found", "Conversación no encontrada");
+    if (conversation.conversation.channel === "telegram" && !body.data.actionId) {
+      return apiError(422, "action_id_required", "Falta el identificador de esta acción de envío");
+    }
+    if (
+      conversation.conversation.channel !== "telegram" &&
+      body.data.text.length > 4096
+    ) {
+      return apiError(422, "invalid_body", "El mensaje no puede exceder 4096 caracteres");
+    }
+  }
 
   try {
     const data = body.data;
@@ -79,6 +97,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
             conversationId: id,
             organizationId: session.organizationId,
             text: data.text,
+            actionId: "actionId" in data ? data.actionId : undefined,
           })
         : data.type === "location"
           ? await sendStructured({

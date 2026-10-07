@@ -129,7 +129,7 @@ export const contact = pgTable(
      * 014: canal por el que vive este contacto. Aditivo y con default: toda
      * fila existente sigue significando exactamente lo mismo.
      */
-    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger"] })
+    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger", "telegram"] })
       .notNull()
       .default("whatsapp"),
     /**
@@ -353,7 +353,7 @@ export const conversation = pgTable(
      * 014: canal de la conversacion. Denormalizado del contacto a proposito:
      * el ruteo de salida y el filtro de la bandeja lo leen en cada mensaje.
      */
-    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger"] })
+    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger", "telegram"] })
       .notNull()
       .default("whatsapp"),
     /**
@@ -596,6 +596,116 @@ export const messengerCredentials = pgTable(
     uniqueIndex("messenger_credentials_page_uq").on(t.pageId),
     index("messenger_credentials_account_ref_idx").on(t.accountRef),
   ]
+);
+
+/** US6: private Telegram bot connection; revocation clears only ciphertext. */
+export const telegramCredentials = pgTable(
+  "telegram_credentials",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    botId: text("bot_id").notNull(),
+    botUsername: text("bot_username"),
+    tokenCipher: text("token_cipher"),
+    tokenIv: text("token_iv"),
+    tokenTag: text("token_tag"),
+    allowedUserIds: jsonb("allowed_user_ids").$type<string[]>().notNull().default([]),
+    connected: boolean("connected").notNull().default(false),
+    status: text("status", {
+      enum: ["disconnected", "connecting", "connected", "error", "conflict"],
+    }).notNull().default("disconnected"),
+    lastErrorCode: text("last_error_code"),
+    nextUpdateId: text("next_update_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_credentials_org_uq").on(t.organizationId),
+    uniqueIndex("telegram_credentials_bot_uq").on(t.botId),
+    index("telegram_credentials_connected_idx").on(t.connected, t.status),
+  ],
+);
+
+/** Durable accepted/discarded Telegram update marker, unique before cursor advance. */
+export const telegramUpdate = pgTable(
+  "telegram_update",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    credentialId: text("credential_id")
+      .notNull()
+      .references(() => telegramCredentials.id),
+    updateId: text("update_id").notNull(),
+    providerMessageId: text("provider_message_id").notNull(),
+    disposition: text("disposition", { enum: ["accepted", "discarded"] }).notNull(),
+    conversationId: text("conversation_id").references(() => conversation.id, { onDelete: "set null" }),
+    messageId: text("message_id").references(() => message.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_update_credential_update_uq").on(t.credentialId, t.updateId),
+    uniqueIndex("telegram_update_provider_message_uq").on(t.providerMessageId),
+    index("telegram_update_org_created_idx").on(t.organizationId, t.createdAt),
+  ],
+);
+
+/** One durable agent turn per accepted Telegram message. */
+export const telegramAgentWork = pgTable(
+  "telegram_agent_work",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    credentialId: text("credential_id")
+      .notNull()
+      .references(() => telegramCredentials.id),
+    updateId: text("update_id").notNull(),
+    conversationId: text("conversation_id").notNull().references(() => conversation.id, { onDelete: "cascade" }),
+    inboundMessageId: text("inbound_message_id").notNull().references(() => message.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["pending", "claimed", "completed", "cancelled", "uncertain"] }).notNull().default("pending"),
+    claimedAt: timestamp("claimed_at"),
+    completedAt: timestamp("completed_at"),
+    errorCode: text("error_code"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_agent_work_update_uq").on(t.credentialId, t.updateId),
+    index("telegram_agent_work_org_status_idx").on(t.organizationId, t.status),
+  ],
+);
+
+/** Outbound reservation is committed before any Telegram network request. */
+export const telegramDelivery = pgTable(
+  "telegram_delivery",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    credentialId: text("credential_id")
+      .notNull()
+      .references(() => telegramCredentials.id),
+    conversationId: text("conversation_id").notNull().references(() => conversation.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    origin: text("origin", { enum: ["manual", "agent"] }).notNull(),
+    triggerMessageId: text("trigger_message_id").references(() => message.id, { onDelete: "set null" }),
+    messageId: text("message_id").references(() => message.id, { onDelete: "set null" }),
+    telegramMessageId: text("telegram_message_id"),
+    status: text("status", { enum: ["reserved", "sending", "sent", "failed", "uncertain", "cancelled"] }).notNull().default("reserved"),
+    errorCode: text("error_code"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_delivery_org_key_uq").on(t.organizationId, t.idempotencyKey),
+    uniqueIndex("telegram_delivery_message_uq").on(t.messageId),
+    index("telegram_delivery_org_status_idx").on(t.organizationId, t.status),
+  ],
 );
 
 export const agentProfile = pgTable(

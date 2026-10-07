@@ -128,11 +128,22 @@ export async function listMessages(
 ) {
   const db = getDb();
   return db
-    .select({ message: schema.message, media: schema.mediaAsset })
+    .select({
+      message: schema.message,
+      media: schema.mediaAsset,
+      telegramDeliveryStatus: schema.telegramDelivery.status,
+    })
     .from(schema.message)
     .leftJoin(
       schema.mediaAsset,
       eq(schema.message.mediaAssetId, schema.mediaAsset.id)
+    )
+    .leftJoin(
+      schema.telegramDelivery,
+      and(
+        eq(schema.telegramDelivery.organizationId, schema.message.organizationId),
+        eq(schema.telegramDelivery.messageId, schema.message.id),
+      ),
     )
     .where(
       scoped(

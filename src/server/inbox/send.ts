@@ -25,6 +25,11 @@ import {
 } from "@/server/messenger/credentials";
 import { sendMessengerText } from "@/server/messenger/send";
 import {
+  sendTelegramDelivery,
+  TelegramDeliveryError,
+  TelegramTextTooLongError,
+} from "@/server/telegram/delivery";
+import {
   capabilitiesFor,
   textFits,
   windowClosedMessage,
@@ -71,6 +76,8 @@ type SendTarget = {
   instagram?: InstagramCredentials;
   /** 017: presente solo en conversaciones de Messenger. */
   messenger?: MessengerCredentials;
+  /** 018: Telegram uses durable reservation before calling its Bot API. */
+  telegram?: true;
 };
 
 /**
@@ -178,6 +185,22 @@ async function prepareSend(
       destinatario: { to: fbRecipient },
       recipient: fbRecipient,
       messenger: fbCreds,
+    };
+  }
+
+  if (row.conversation.channel === "telegram") {
+    if (!isChannelEnabled("telegram")) {
+      throw new SendError("not_connected", "El canal de Telegram está desactivado en esta instancia");
+    }
+    if (!row.conversation.channelThreadRef) {
+      throw new SendError("not_connected", "La conversación no tiene un chat de Telegram válido");
+    }
+    return {
+      conversation: row.conversation,
+      credentials: null,
+      destinatario: { to: row.conversation.channelThreadRef },
+      recipient: row.conversation.channelThreadRef,
+      telegram: true,
     };
   }
 
@@ -296,9 +319,39 @@ export async function sendText(input: {
   organizationId: string;
   text: string;
   aiGenerated?: boolean;
+  actionId?: string;
+  telegramTriggerMessageId?: string;
 }): Promise<SendResult> {
   const target = await prepareSend(input.conversationId, input.organizationId);
   const { credentials } = target;
+
+  if (target.telegram) {
+    try {
+      return await sendTelegramDelivery({
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        text: input.text,
+        aiGenerated: input.aiGenerated ?? false,
+        actionId: input.actionId,
+        triggerMessageId: input.telegramTriggerMessageId,
+      });
+    } catch (error) {
+      if (error instanceof TelegramTextTooLongError) {
+        throw new SendError("meta_error", error.message);
+      }
+      if (error instanceof TelegramDeliveryError) {
+        const code = error.code === "sandbox_violation"
+          ? "sandbox_violation"
+          : error.code === "not_connected"
+            ? "not_connected"
+            : error.code === "human_handoff"
+              ? "window_closed"
+              : "meta_error";
+        throw new SendError(code, error.message);
+      }
+      throw error;
+    }
+  }
 
   const waMessageId = target.instagram
     ? await callInstagramSend(target, input.text)

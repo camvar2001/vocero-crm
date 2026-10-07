@@ -490,7 +490,8 @@ function toDate(timestamp: string): Date {
 
 export function serializeMessage(
   m: typeof schema.message.$inferSelect,
-  media: typeof schema.mediaAsset.$inferSelect | null = null
+  media: typeof schema.mediaAsset.$inferSelect | null = null,
+  telegramDeliveryStatus: "reserved" | "sending" | "sent" | "failed" | "uncertain" | "cancelled" | null = null,
 ) {
   return {
     id: m.id,
@@ -499,6 +500,7 @@ export function serializeMessage(
     type: m.type,
     text: m.text,
     status: m.status,
+    telegramDeliveryStatus,
     /** Motivo del fallo, ya traducido a algo accionable (`describeSendError`). */
     error: m.error,
     aiGenerated: m.aiGenerated,

@@ -29,6 +29,10 @@ const prefixes = {
   adAttribution: "att",
   conversionEvent: "cve",
   capiSettings: "capi",
+  telegramCredentials: "tgcred",
+  telegramUpdate: "tgu",
+  telegramWork: "tgw",
+  telegramDelivery: "tgd",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

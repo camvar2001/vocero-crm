@@ -69,6 +69,8 @@ export type MessageDto = {
   type: string;
   text: string | null;
   status: "pending" | "sent" | "delivered" | "read" | "failed";
+  /** Telegram delivery state is separate from the legacy cross-channel status. */
+  telegramDeliveryStatus: "reserved" | "sending" | "sent" | "failed" | "uncertain" | "cancelled" | null;
   /** Motivo del fallo en lenguaje llano cuando status = "failed". */
   error: string | null;
   aiGenerated: boolean;

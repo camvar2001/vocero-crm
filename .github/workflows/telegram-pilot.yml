@@ -11,7 +11,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   verify:
@@ -40,6 +39,10 @@ jobs:
         if: ${{ !cancelled() }}
 
   image:
+    if: github.repository == 'camvar2001/vocero-crm' && github.ref == 'refs/heads/codex/telegram-local'
+    permissions:
+      contents: read
+      packages: write
     needs: verify
     runs-on: ubuntu-latest
     steps:

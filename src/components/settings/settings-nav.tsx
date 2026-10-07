@@ -21,15 +21,18 @@ const ADS_TAB: Tab = { href: "/settings/ads", label: "Anuncios" };
 
 /** 017 — "Messenger" solo si el canal está encendido con CHANNELS. */
 const MESSENGER_TAB: Tab = { href: "/settings/messenger", label: "Messenger" };
+const TELEGRAM_TAB: Tab = { href: "/settings/telegram", label: "Telegram" };
 
 export function SettingsNav({
   agenda = false,
   atribucion = false,
   messenger = false,
+  telegram = false,
 }: {
   agenda?: boolean;
   atribucion?: boolean;
   messenger?: boolean;
+  telegram?: boolean;
 }) {
   const pathname = usePathname();
   // Qué pestañas existen lo decide el servidor y baja por prop: este es un
@@ -38,6 +41,7 @@ export function SettingsNav({
   const tabs = [
     ...TABS.slice(0, 1),
     ...(messenger ? [MESSENGER_TAB] : []),
+    ...(telegram ? [TELEGRAM_TAB] : []),
     ...TABS.slice(1),
     ...(agenda ? [AGENDA_TAB] : []),
     ...(atribucion ? [ADS_TAB] : []),

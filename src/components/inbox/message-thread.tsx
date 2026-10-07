@@ -14,6 +14,7 @@ import {
   UserRound,
 } from "lucide-react";
 import type { MessageDto, MessageMediaDto } from "@/lib/types";
+import { telegramDeliveryNotice } from "@/lib/telegram-settings";
 import { cn } from "@/lib/utils";
 import { formatBytes, mediaLabel } from "./helpers";
 
@@ -204,6 +205,8 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
         const grouped =
           !newDay && prev !== undefined && prev.direction === m.direction;
         const out = m.direction === "out";
+        const telegramStatus = m.telegramDeliveryStatus;
+        const telegramNotice = telegramDeliveryNotice(telegramStatus);
 
         return (
           <div key={m.id}>
@@ -286,8 +289,26 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
                     />
                     <span>
                       <span className="font-semibold">No se entregó.</span>{" "}
-                      {m.error ?? "Meta no informó el motivo."}
+                      {m.error ?? "La plataforma no informó el motivo."}
                     </span>
+                  </p>
+                )}
+                {out && telegramNotice && (
+                  <p
+                    role={telegramStatus === "uncertain" || telegramStatus === "failed" ? "alert" : "status"}
+                    className={cn(
+                      "mt-1.5 flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-[11.5px] leading-snug",
+                      telegramStatus === "uncertain" || telegramStatus === "failed"
+                        ? "border-warning-soft bg-warning-tint text-warning-text"
+                        : "border-border-strong bg-background text-text-2"
+                    )}
+                  >
+                    {telegramStatus === "uncertain" || telegramStatus === "failed" ? (
+                      <AlertTriangle className="mt-[1px] h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+                    ) : (
+                      <Clock3 className="mt-[1px] h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+                    )}
+                    <span>{telegramNotice}</span>
                   </p>
                 )}
               </div>

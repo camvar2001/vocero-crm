@@ -197,6 +197,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
         aiGenerated: false,
         origin: "operator",
         media: null,
+        telegramDeliveryStatus: null,
         createdAt: p.createdAt,
       })),
     ];
@@ -209,7 +210,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
    * jamás se pierde en silencio.
    */
   const sendText = useCallback(
-    async (text: string): Promise<string | null> => {
+    async (text: string, actionId?: string): Promise<string | null> => {
       const conversationId = selectedIdRef.current;
       if (!conversationId) return "Sin conversación seleccionada";
 
@@ -229,7 +230,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
         const res = await fetch(`/api/conversations/${conversationId}/messages`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, ...(actionId ? { actionId } : {}) }),
         }).catch(() => null);
         if (!res) {
           drop();

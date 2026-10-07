@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import type { ConversationDto, TemplateDto } from "@/lib/types";
+import { manualTelegramActionId, type ManualTelegramRetry } from "@/lib/telegram-settings";
 import { cn } from "@/lib/utils";
 import { formatBytes, formatRemaining } from "./helpers";
 import { TemplateSender } from "./template-sender";
@@ -37,7 +38,7 @@ export function Composer({
   onSent,
 }: {
   conversation: ConversationDto;
-  onSend: (text: string) => Promise<string | null>;
+  onSend: (text: string, actionId?: string) => Promise<string | null>;
   onSent: () => void;
 }) {
   const [text, setText] = useState("");
@@ -53,6 +54,7 @@ export function Composer({
   const [contactPhone, setContactPhone] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const telegramRetry = useRef<ManualTelegramRetry | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +76,14 @@ export function Composer({
       if (filePreview) URL.revokeObjectURL(filePreview);
     };
   }, [filePreview]);
+
+  useEffect(() => {
+    if (conversation.channel !== "telegram") return;
+    if (filePreview) URL.revokeObjectURL(filePreview);
+    setFile(null);
+    setFilePreview(null);
+    setPanel(null);
+  }, [conversation.channel, conversation.id, filePreview]);
 
   function autogrow() {
     const el = taRef.current;
@@ -99,6 +109,14 @@ export function Composer({
 
   async function submit() {
     setError(null);
+
+    if (
+      conversation.channel === "telegram" &&
+      Array.from(text.trim()).length > 4096
+    ) {
+      setError("Telegram admite hasta 4096 caracteres por mensaje.");
+      return;
+    }
 
     if (file) {
       // El adjunto sí espera: sube el archivo y no tiene sentido encolar otro
@@ -133,14 +151,25 @@ export function Composer({
     // "enviando" del hilo es la que informa el estado real.
     setText("");
     if (taRef.current) taRef.current.style.height = "auto";
-    const err = await onSend(value);
+    const actionId =
+      conversation.channel === "telegram"
+        ? manualTelegramActionId(
+            value,
+            telegramRetry.current,
+            () => crypto.randomUUID()
+          )
+        : undefined;
+    const err = await onSend(value, actionId);
     if (err) {
+      if (actionId) telegramRetry.current = { text: value, actionId };
       setError(err);
       // Lo que no salió vuelve al campo. Si ya empezaste a escribir otra cosa
       // se antepone en vez de pisarte: nada se pierde en silencio.
       setText((actual) => (actual ? `${value}\n${actual}` : value));
       taRef.current?.focus();
       setTimeout(autogrow, 0);
+    } else if (actionId && telegramRetry.current?.text === value) {
+      telegramRetry.current = null;
     }
   }
 
@@ -197,7 +226,7 @@ export function Composer({
     onSent();
   }
 
-  if (!conversation.windowOpen) {
+  if (!conversation.windowOpen && conversation.channel === "whatsapp") {
     return (
       <div className="border-t bg-background px-[18px] py-3.5">
         <div className="mb-3 flex items-start gap-2 rounded-md border border-warning-soft bg-warning-tint p-3 text-sm text-warning-text">
@@ -216,11 +245,15 @@ export function Composer({
     );
   }
 
-  const canSubmit = file !== null || text.trim().length > 0;
+  const telegram = conversation.channel === "telegram";
+  const telegramLength = Array.from(text.trim()).length;
+  const telegramTooLong = telegram && telegramLength > 4096;
+  const canSubmit =
+    (file !== null || text.trim().length > 0) && !telegramTooLong;
 
   return (
     <div className="border-t bg-background px-[18px] pb-3.5 pt-3">
-      {templates.length > 0 && !file && panel === null && (
+      {templates.length > 0 && !telegram && !file && panel === null && (
         <div className="mb-2.5 flex flex-wrap gap-1.5">
           {templates.slice(0, 4).map((t) => (
             <button
@@ -350,7 +383,7 @@ export function Composer({
           className="hidden"
           onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
         />
-        <div className="flex shrink-0 items-center gap-0.5">
+        {!telegram && <div className="flex shrink-0 items-center gap-0.5">
           <button
             onClick={() => fileRef.current?.click()}
             aria-label="Adjuntar archivo"
@@ -381,7 +414,7 @@ export function Composer({
           >
             <UserRound className="h-[18px] w-[18px]" strokeWidth={1.7} />
           </button>
-        </div>
+        </div>}
         <textarea
           ref={taRef}
           placeholder={file ? "Pie del adjunto (opcional)…" : "Escribe una respuesta…"}
@@ -414,7 +447,9 @@ export function Composer({
       <div className="mt-1.5 flex items-center justify-between">
         {error ? <p className="text-xs text-destructive">{error}</p> : <span />}
         <p className="font-mono text-[10.5px] tracking-[0.04em] text-text-3">
-          Ventana abierta · quedan {formatRemaining(conversation.windowRemainingMs)}
+          {telegram
+            ? `${telegramLength}/4096 caracteres`
+            : `Ventana abierta · quedan ${formatRemaining(conversation.windowRemainingMs)}`}
         </p>
       </div>
     </div>

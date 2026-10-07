@@ -22,14 +22,19 @@ describe("CHANNELS: qué bandejas enciende la instancia (ADR-001)", () => {
 
   it("un canal que no existe se ignora, no tumba el arranque", () => {
     const on = parseChannels("telegram,instagram,,");
-    expect([...on].sort()).toEqual(["instagram", "whatsapp"]);
+    expect([...on].sort()).toEqual(["instagram", "telegram", "whatsapp"]);
   });
 
   it("isChannel es la única lista: no hay uniones sueltas por ahí", () => {
     expect(isChannel("whatsapp")).toBe(true);
     expect(isChannel("instagram")).toBe(true);
-    expect(isChannel("telegram")).toBe(false);
+    expect(isChannel("telegram")).toBe(true);
     expect(isChannel("")).toBe(false);
+  });
+
+  it("Telegram solo se enciende cuando la bandera lo enumera", () => {
+    expect(parseChannels(undefined).has("telegram")).toBe(false);
+    expect(parseChannels("whatsapp,telegram").has("telegram")).toBe(true);
   });
 });
 
@@ -41,7 +46,7 @@ describe("capacidades por canal", () => {
   });
 
   it("un canal desconocido cae en WhatsApp en vez de reventar", () => {
-    const caps = capabilitiesFor("telegram" as never);
+    const caps = capabilitiesFor("no-existe" as never);
     expect(caps.label).toBe(CHANNEL_LABEL.whatsapp);
   });
 
@@ -56,6 +61,17 @@ describe("capacidades por canal", () => {
   it("WhatsApp no tiene límite práctico de texto", () => {
     expect(textFits("whatsapp", "a".repeat(5000))).toBe(true);
   });
+
+  it("Telegram admite texto hasta 4096 caracteres y no medios", () => {
+    const telegram = capabilitiesFor("telegram");
+    expect(telegram.label).toBe("Telegram");
+    expect(telegram.windowMs).toBeNull();
+    expect(telegram.outsideWindow).toBe("none");
+    expect(telegram.outboundMedia).toBe(false);
+    expect(textFits("telegram", "a".repeat(4096))).toBe(true);
+    expect(textFits("telegram", "😀".repeat(4096))).toBe(true);
+    expect(textFits("telegram", "a".repeat(4097))).toBe(false);
+  });
 });
 
 describe("distintivo de bandeja", () => {
@@ -68,6 +84,6 @@ describe("distintivo de bandeja", () => {
   });
 
   it("un canal desconocido no pinta nada en vez de tumbar la lista", () => {
-    expect(channelMark("telegram" as never)).toBeNull();
+    expect(channelMark("no-existe" as never)).toBeNull();
   });
 });

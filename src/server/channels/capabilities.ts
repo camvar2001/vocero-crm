@@ -30,6 +30,8 @@ export type ChannelCapabilities = {
   outsideWindow: OutsideWindowStrategy;
   /** Límite de texto en BYTES (no caracteres); null = sin límite práctico. */
   maxTextBytes: number | null;
+  /** Límite de texto en puntos de código Unicode; null = sin límite. */
+  maxTextLength: number | null;
   /** ¿Se pueden mandar adjuntos por este canal hoy? */
   outboundMedia: boolean;
   /**
@@ -48,6 +50,7 @@ export const CHANNEL_CAPABILITIES: Record<Channel, ChannelCapabilities> = {
     windowMs: DAY_MS,
     outsideWindow: "template",
     maxTextBytes: null,
+    maxTextLength: null,
     outboundMedia: true,
     deliveryReceipts: true,
   },
@@ -58,6 +61,7 @@ export const CHANNEL_CAPABILITIES: Record<Channel, ChannelCapabilities> = {
     // Meta corta en 1000 bytes: con acentos y emojis el margen real es menor
     // de lo que aparenta al contar caracteres.
     maxTextBytes: 1000,
+    maxTextLength: null,
     outboundMedia: false,
     deliveryReceipts: false,
   },
@@ -70,6 +74,17 @@ export const CHANNEL_CAPABILITIES: Record<Channel, ChannelCapabilities> = {
     windowMs: DAY_MS,
     outsideWindow: "human_agent_tag",
     maxTextBytes: 2000,
+    maxTextLength: null,
+    outboundMedia: false,
+    deliveryReceipts: false,
+  },
+  // Telegram limita sendMessage a 4096 caracteres y no usa la ventana de Meta.
+  telegram: {
+    label: CHANNEL_LABEL.telegram,
+    windowMs: null,
+    outsideWindow: "none",
+    maxTextBytes: null,
+    maxTextLength: 4096,
     outboundMedia: false,
     deliveryReceipts: false,
   },
@@ -95,7 +110,9 @@ export function windowClosedMessage(channel: Channel): string {
 
 /** ¿Este texto cabe en el canal? */
 export function textFits(channel: Channel, text: string): boolean {
-  const max = capabilitiesFor(channel).maxTextBytes;
-  if (max === null) return true;
-  return Buffer.byteLength(text, "utf8") <= max;
+  const caps = capabilitiesFor(channel);
+  if (caps.maxTextLength !== null && Array.from(text).length > caps.maxTextLength) {
+    return false;
+  }
+  return caps.maxTextBytes === null || Buffer.byteLength(text, "utf8") <= caps.maxTextBytes;
 }

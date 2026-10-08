@@ -49,6 +49,10 @@ export function orphanedTelegramDeliveryRecovery(status: "reserved" | "sending")
     : { deliveryStatus: "uncertain" as const, errorCode: "restart_during_send", messageError: "No se pudo confirmar la entrega; revisa antes de repetir" };
 }
 
+export function manualHandoffTimestampExpression() {
+  return sql`coalesce(${schema.conversation.handoffAt}, now())`;
+}
+
 export async function sendTelegramDelivery(input: {
   organizationId: string;
   conversationId: string;
@@ -104,7 +108,7 @@ async function takeManualTelegramControl(organizationId: string, conversationId:
     const now = new Date();
     await tx.update(schema.conversation).set({
       aiEnabled: false,
-      handoffAt: sql`coalesce(${schema.conversation.handoffAt}, ${now})`,
+      handoffAt: manualHandoffTimestampExpression(),
       handoffReason: sql`coalesce(${schema.conversation.handoffReason}, 'manual_reply')`,
       updatedAt: now,
     }).where(scoped(schema.conversation.organizationId, organizationId, eq(schema.conversation.id, conversationId)));

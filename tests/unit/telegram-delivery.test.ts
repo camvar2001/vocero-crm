@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { isTelegramRecipientAllowed, orphanedTelegramDeliveryRecovery, prepareTelegramText, TelegramTextTooLongError } from "@/server/telegram/delivery";
+import { isTelegramRecipientAllowed, manualHandoffTimestampExpression, orphanedTelegramDeliveryRecovery, prepareTelegramText, TelegramTextTooLongError } from "@/server/telegram/delivery";
 import { withTelegramManualTakeover } from "@/server/telegram/mutex";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 describe("Telegram message length", () => {
   it("counts Unicode code points and accepts exactly 4096", () => {
@@ -21,6 +22,12 @@ describe("Telegram message length", () => {
 });
 
 describe("Telegram authorization and manual takeover", () => {
+  it("uses PostgreSQL now() instead of sending an untyped Date through raw SQL", () => {
+    const query = new PgDialect().sqlToQuery(manualHandoffTimestampExpression());
+    expect(query.sql).toContain("now()");
+    expect(query.params).not.toContainEqual(expect.any(Date));
+  });
+
   it("blocks a historical conversation after its recipient is removed from the allowlist", () => {
     expect(isTelegramRecipientAllowed(["1001"], "1002")).toBe(false);
     expect(isTelegramRecipientAllowed(["1001"], "1001")).toBe(true);

@@ -212,8 +212,11 @@ export function ContactPanel({
                 <UserRound className="h-4 w-4" strokeWidth={1.7} /> Atención humana
               </p>
               <p className="mt-1 text-xs text-warning-text opacity-80">
-                {HANDOFF_LABELS[conversation.handoffReason ?? ""] ??
-                  "La IA está en pausa en esta conversación."}
+                {conversation.channel === "telegram" &&
+                conversation.handoffReason === "manual_reply"
+                  ? "Respuesta manual — IA en pausa"
+                  : HANDOFF_LABELS[conversation.handoffReason ?? ""] ??
+                    "La IA está en pausa en esta conversación."}
               </p>
               <Button
                 size="sm"

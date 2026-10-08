@@ -124,13 +124,14 @@ const harnessSource = `
         h(Composer, { conversation, onSend: send, onSent: () => {} })
       );
     }
-    if (view === "handoff") {
+    if (view === "handoff" || view === "handoff-whatsapp") {
       return h(ContactPanel, {
         conversation: {
           ...conversation,
+          channel: view === "handoff-whatsapp" ? "whatsapp" : "telegram",
           aiEnabled: true,
           handoffAt: new Date().toISOString(),
-          handoffReason: "cliente",
+          handoffReason: "manual_reply",
         },
         onPatchConversation: patchConversation,
         onClose: () => {},
@@ -351,7 +352,7 @@ try {
     if (!request.url().startsWith(BASE)) externalRequests.push(request.url().split("?")[0]);
   });
   await handoffPage.goto(`${BASE}/?view=handoff`, { waitUntil: "domcontentloaded" });
-  await handoffPage.getByText("El cliente pidió un humano").waitFor();
+  await handoffPage.getByText("Respuesta manual — IA en pausa").waitFor();
   const handoffResponse = handoffPage.waitForResponse(
     (response) => response.url().endsWith("/__handoff") && response.status() === 200
   );
@@ -359,6 +360,12 @@ try {
   await handoffResponse;
   ok("el control de handoff llama a reactivar IA de forma explícita", handoffPatch?.reactivate === true);
   await handoffPage.close();
+
+  const whatsappHandoffPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await whatsappHandoffPage.goto(`${BASE}/?view=handoff-whatsapp`, { waitUntil: "domcontentloaded" });
+  await whatsappHandoffPage.getByText("Respondiste desde el teléfono — IA en pausa").waitFor();
+  ok("WhatsApp conserva el texto de handoff manual desde el teléfono", true);
+  await whatsappHandoffPage.close();
 
   console.log(`\n${failures === 0 ? `TODO VERDE (${checks} checks)` : `${failures} FALLO(S) de ${checks} checks`}`);
 } finally {

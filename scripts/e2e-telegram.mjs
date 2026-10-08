@@ -17,6 +17,7 @@ import { chromium } from "playwright";
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CANDIDATE_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const CHROME_PATH =
+  process.env.CHROME_PATH ??
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ??
   (existsSync(CANDIDATE_CHROME) ? CANDIDATE_CHROME : undefined);
 

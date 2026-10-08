@@ -58,10 +58,46 @@ let failNextTelegramRequest = false;
 let stage = "fixture setup";
 let checks = 0;
 
+class SafeHarnessAssertion extends Error {
+  constructor(readonly testName: string) {
+    super("harness_assertion_failed");
+    this.name = "SafeHarnessAssertion";
+  }
+}
+
 function check(condition: unknown, safeName: string): asserts condition {
   checks++;
-  if (!condition) throw new Error(`assertion_failed:${safeName}`);
+  if (!condition) throw new SafeHarnessAssertion(safeName);
   console.log(`OK ${safeName}`);
+}
+
+function safeErrorName(error: unknown): string {
+  if (!(error instanceof Error)) return "UnknownError";
+  const allowedNames = new Set([
+    "SafeHarnessAssertion",
+    "TelegramDeliveryError",
+    "TelegramIngestPausedError",
+    "PostgresError",
+    "TypeError",
+    "Error",
+  ]);
+  return allowedNames.has(error.name) ? error.name : "OtherError";
+}
+
+function safeErrorCode(error: unknown): string {
+  if (!(error instanceof Error)) return "none";
+  const code = (error as Error & { code?: unknown }).code;
+  if (typeof code !== "string") return "none";
+  if (/^\d{5}$/.test(code)) return code;
+  const allowed = new Set([
+    "sandbox_violation",
+    "not_connected",
+    "human_handoff",
+    "action_id_required",
+    "send_failed",
+    "uncertain",
+  ]);
+  return allowed.has(code) ? code : "other";
 }
 
 function telegramResponse(messageId: string): Response {
@@ -332,9 +368,13 @@ async function run(): Promise<void> {
 try {
   await run();
   console.log(`TODO VERDE (${checks} checks de integración Telegram)`);
-} catch {
-  // Deliberately omit exception objects: driver/SQL errors can contain host or data.
-  console.error(`FAILED at safe stage: ${stage}`);
+} catch (error) {
+  // Never print the message, stack, SQL, URL, identifiers, request body, or token.
+  if (error instanceof SafeHarnessAssertion) {
+    console.error(`FAILED at safe stage: ${stage}; assertion=${error.testName}`);
+  } else {
+    console.error(`FAILED at safe stage: ${stage}; name=${safeErrorName(error)}; code=${safeErrorCode(error)}`);
+  }
   process.exitCode = 1;
 } finally {
   globalThis.fetch = originalFetch;

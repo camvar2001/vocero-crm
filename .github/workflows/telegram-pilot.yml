@@ -37,6 +37,11 @@ jobs:
         if: ${{ !cancelled() }}
       - run: pnpm build
         if: ${{ !cancelled() }}
+      - name: Telegram browser behavior (mock platforms)
+        if: ${{ matrix.channels != '' && !cancelled() }}
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node scripts/e2e-telegram.mjs
 
   image:
     if: github.repository == 'camvar2001/vocero-crm' && github.ref == 'refs/heads/codex/telegram-local'

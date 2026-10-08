@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { getEnv } from "@/lib/env";
 import { channelDisabledResponse, isChannelEnabled } from "@/server/channels/enabled";
 import { TelegramApiError, TelegramClient } from "@/server/telegram/client";
 import { startTelegramPoller, stopTelegramPoller, withTelegramSessionLock } from "@/server/telegram/poller";
@@ -166,7 +167,7 @@ function sameOrigin(req: Request): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return false;
   try {
-    return new URL(origin).origin === new URL(req.url).origin;
+    return new URL(origin).origin === new URL(getEnv().APP_BASE_URL).origin;
   } catch {
     return false;
   }

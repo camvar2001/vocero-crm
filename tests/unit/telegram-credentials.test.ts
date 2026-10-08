@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   save: vi.fn(),
   revoke: vi.fn(),
   setConnected: vi.fn(),
+  appBaseUrl: "http://localhost:3000",
   events: [] as string[],
 }));
 
@@ -17,6 +18,7 @@ vi.mock("@/lib/api", async () => {
       (...args: unknown[]) => handler({ userId: "user_1", organizationId: "org_1", role: state.role }, ...args),
   };
 });
+vi.mock("@/lib/env", () => ({ getEnv: () => ({ APP_BASE_URL: state.appBaseUrl }) }));
 vi.mock("@/server/channels/enabled", () => ({
   isChannelEnabled: () => true,
   channelDisabledResponse: () => new Response(null, { status: 404 }),
@@ -62,13 +64,14 @@ beforeEach(() => {
   state.save.mockReset();
   state.revoke.mockReset().mockImplementation(async () => { state.events.push("revoke"); });
   state.setConnected.mockReset();
+  state.appBaseUrl = "http://localhost:3000";
   state.events = [];
 });
 
-const request = (method: string, body?: unknown, origin = "http://localhost") =>
-  new Request("http://localhost/api/settings/telegram", {
+const request = (method: string, body?: unknown, origin = "http://localhost:3000", requestHost = "localhost:3000", forwardedHost?: string) =>
+  new Request(`http://${requestHost}/api/settings/telegram`, {
     method,
-    headers: { origin, ...(body ? { "content-type": "application/json" } : {}) },
+    headers: { origin, ...(forwardedHost ? { "x-forwarded-host": forwardedHost } : {}), ...(body ? { "content-type": "application/json" } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
@@ -83,9 +86,16 @@ describe("Telegram settings permissions and secret handling", () => {
 
   it("rejects cross-origin writes", async () => {
     const { PUT } = await import("@/app/api/settings/telegram/route");
-    const response = await PUT(request("PUT", { token: "secret-token", allowedUserIds: ["123"] }, "https://attacker.example"));
+    const response = await PUT(request("PUT", { token: "secret-token", allowedUserIds: ["123"] }, "https://attacker.example", "next-internal:3000", "localhost:3000"));
     expect(response.status).toBe(403);
     expect(state.save).not.toHaveBeenCalled();
+  });
+
+  it("accepts the configured browser origin when Next exposes an internal request host", async () => {
+    const { PUT } = await import("@/app/api/settings/telegram/route");
+    const response = await PUT(request("PUT", { token: "secret-token", allowedUserIds: ["123"] }, "http://localhost:3000", "next-internal:3000"));
+    expect(response.status).toBe(200);
+    expect(state.save).toHaveBeenCalledOnce();
   });
 
   it("never returns the saved token from GET", async () => {

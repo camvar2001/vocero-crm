@@ -43,6 +43,22 @@ function draftStorageKey(chatId: string) {
   return `vocero:inmob:draft:${chatId}`;
 }
 
+function readAcknowledgement(chatId: string): string | null {
+  try {
+    return window.sessionStorage.getItem(`vocero:inmob:acknowledged:${chatId}`);
+  } catch {
+    return null;
+  }
+}
+
+function writeAcknowledgement(chatId: string, requestId: string) {
+  try {
+    window.sessionStorage.setItem(`vocero:inmob:acknowledged:${chatId}`, requestId);
+  } catch {
+    // El reconocimiento en memoria sigue disponible durante esta visita.
+  }
+}
+
 function readRecovery(chatId: string): RecoveryDraft | null {
   try {
     const raw = window.sessionStorage.getItem(storageKey(chatId));
@@ -357,7 +373,10 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
       const savedTurn = saved
         ? serverTurns.find((turn) => turn.requestId === saved.requestId) ?? null
         : null;
-      const latestUncertain = [...serverTurns].reverse().find((turn) => turn.status === "uncertain");
+      // Una solicitud posterior demuestra que ya se continuó tras el aviso.
+      // Conservamos el estado incierto y la prohibición de reenviar su texto.
+      const latestTurn = serverTurns.at(-1);
+      const latestUncertain = latestTurn?.status === "uncertain" ? latestTurn : undefined;
       setChat(body);
       setTurns((current) => {
         const byId = new Map(serverTurns.map((turn) => [turn.requestId, turn]));
@@ -381,6 +400,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         return uniqueTurns(combined).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       });
       setPersistedUncertainId(latestUncertain?.requestId ?? null);
+      setAcknowledgedUncertainId((current) => readAcknowledgement(body.chatId) ?? current);
       if (saved && savedTurn) {
         if (savedTurn.status === "running") {
           const pending = { ...saved, state: "pending" as const };
@@ -554,6 +574,13 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
     }
   }
 
+  function acknowledgeUncertainty() {
+    if (!chat || !persistedUncertainId) return;
+    writeAcknowledgement(chat.chatId, persistedUncertainId);
+    setAcknowledgedUncertainId(persistedUncertainId);
+    setRequestError(null);
+  }
+
   function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -648,10 +675,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
                         turn={turn}
                         onContinue={
                           turn.requestId === persistedUncertainId
-                            ? () => {
-                                setAcknowledgedUncertainId(turn.requestId);
-                                setRequestError(null);
-                              }
+                            ? acknowledgeUncertainty
                             : undefined
                         }
                         acknowledged={turn.requestId === acknowledgedUncertainId}
@@ -670,10 +694,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
                         turn={turn}
                         onContinue={
                           turn.requestId === persistedUncertainId
-                            ? () => {
-                                setAcknowledgedUncertainId(turn.requestId);
-                                setRequestError(null);
-                              }
+                            ? acknowledgeUncertainty
                             : undefined
                         }
                         acknowledged={turn.requestId === acknowledgedUncertainId}
@@ -690,6 +711,17 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
 
       <footer className="shrink-0 border-t border-border bg-background px-3 py-3 sm:px-6 sm:py-4">
         <div className="mx-auto max-w-4xl">
+          {needsAcknowledgement && (
+            <div role="alert" className="mb-2 rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs leading-5 text-warning-text">
+              <p>La última solicitud sigue sin confirmar. Puedes continuar con otra consulta sin repetirla.</p>
+              <Button type="button" size="sm" variant="outline" className="mt-2" onClick={acknowledgeUncertainty}>
+                Continuar con otra consulta
+              </Button>
+            </div>
+          )}
+          {repeatsUncertain && !needsAcknowledgement && (
+            <p role="alert" className="mb-2 text-xs leading-5 text-warning-text">Esta solicitud sigue sin confirmar. Consulta el estado o escribe una consulta diferente.</p>
+          )}
           {requestError && <p role="alert" className="mb-2 text-xs leading-5 text-danger-text">{requestError}</p>}
           <form
             onSubmit={(event) => void submit(event)}

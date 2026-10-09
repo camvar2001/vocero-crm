@@ -93,6 +93,23 @@ describe("dispatcher nativo de Secretaria", () => {
     expect(result.result).toMatchObject({ timezone: "America/La_Paz" });
   });
 
+  it("convierte los límites ISO con offset a fechas ISO de La Paz para consultar la agenda", async () => {
+    const { executeSecretariaTool } = await import("@/server/inmob/tools");
+
+    await executeSecretariaTool("org_a", {
+      name: "agenda_list",
+      arguments: {
+        from: "2026-10-12T23:30:00-03:00",
+        to: "2026-10-13T03:30:00Z",
+      },
+    });
+
+    expect(listBookingsInRange).toHaveBeenCalledWith("org_a", {
+      from: "2026-10-12",
+      to: "2026-10-12",
+    });
+  });
+
   it("crea una cita para el contacto validado en la organización y sin oferta conversacional", async () => {
     const { executeSecretariaTool } = await import("@/server/inmob/tools");
     const deadline = globalThis.performance.now() + 30_000;

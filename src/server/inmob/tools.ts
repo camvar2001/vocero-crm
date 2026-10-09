@@ -12,6 +12,19 @@ import { inmobEnabled } from "@/server/inmob/flag";
 import { LOCAL_ONLY_CONNECTOR_ID } from "@/server/agenda/connectors/types";
 
 const LA_PAZ = "America/La_Paz" as const;
+
+/** The calendar query accepts an ISO day, while partsInTz returns display text. */
+function isoDateInTimezone(value: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const fields = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+  return `${fields.year}-${fields.month}-${fields.day}`;
+}
+
 const instant = z.string().datetime({ offset: true }).refine(
   (value) => /(?:Z|[+-]\d{2}:\d{2})$/.test(value),
   "La fecha debe incluir Z o un desfase UTC"
@@ -108,8 +121,8 @@ async function dispatch(organizationId: string, tool: Tool, userId: string | und
     }
 
     case "agenda_list": {
-      const from = partsInTz(tool.arguments.from, LA_PAZ).date;
-      const to = partsInTz(tool.arguments.to, LA_PAZ).date;
+      const from = isoDateInTimezone(tool.arguments.from, LA_PAZ);
+      const to = isoDateInTimezone(tool.arguments.to, LA_PAZ);
       const { bookings, truncated } = await listBookingsInRange(organizationId, { from, to });
       return success({
         timezone: LA_PAZ,

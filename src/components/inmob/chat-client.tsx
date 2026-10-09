@@ -310,29 +310,10 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
           return previous && previous.status !== "running" ? previous : turn;
         });
         for (const turn of current) {
-          const absentRecovery = saved?.requestId === turn.requestId &&
-            (saved.state === "rejected" || saved.state === "not_persisted");
+          // Si GET no contiene el UUID que el navegador estaba recuperando,
+          // su copia optimista deja de ser evidencia de un turno persistido.
+          const absentRecovery = saved?.requestId === turn.requestId && !savedTurn;
           if (!byId.has(turn.requestId) && turn.status !== "completed" && !absentRecovery) combined.push(turn);
-        }
-        if (saved && !savedTurn && (saved.state === "uncertain" || saved.state === "pending")) {
-          const existingIndex = combined.findIndex((turn) => turn.requestId === saved.requestId);
-          if (existingIndex >= 0) {
-            combined[existingIndex] = {
-              ...combined[existingIndex],
-              status: "uncertain",
-              errorCode: "network_uncertain",
-            };
-          } else {
-            combined.push({
-              requestId: saved.requestId,
-              message: saved.message,
-              reply: null,
-              status: "uncertain",
-              errorCode: "network_uncertain",
-              results: [],
-              createdAt: saved.createdAt,
-            });
-          }
         }
         return combined.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       });
@@ -350,21 +331,15 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
           setRequestError(null);
         }
       } else if (saved) {
-        if (saved.state === "rejected" || saved.state === "not_persisted") {
-          const safeToResubmit = { ...saved, state: "not_persisted" as const };
-          writeRecovery(body.chatId, safeToResubmit);
-          setRecovery(safeToResubmit);
-          setDraft(saved.message);
-          writeDraft(body.chatId, saved.message);
-          setRequestError("El servidor no guardó este mensaje. Revísalo y envíalo cuando quieras.");
-        } else {
-          const uncertain = { ...saved, state: "uncertain" as const };
-          writeRecovery(body.chatId, uncertain);
-          setRecovery(uncertain);
-          writeDraft(body.chatId, "");
-          setDraft("");
-          setRequestError("Aún no encontramos una respuesta para este envío. Sigue incierto; consulta el estado de nuevo.");
-        }
+        // La ausencia en un GET recién completado es autoritativa para este
+        // UUID: devuelve el texto intacto y solo permite reintentar de forma
+        // explícita con el mismo idempotency key.
+        const safeToResubmit = { ...saved, state: "not_persisted" as const };
+        writeRecovery(body.chatId, safeToResubmit);
+        setRecovery(safeToResubmit);
+        setDraft(saved.message);
+        writeDraft(body.chatId, saved.message);
+        setRequestError("El servidor no guardó este mensaje. Revísalo y envíalo cuando quieras.");
       } else {
         setRecovery(null);
         setDraft(readDraft(body.chatId));

@@ -130,6 +130,11 @@ const server = createServer(async (req, res) => {
         json(res, 503, { errorCode: "configuration" });
         return;
       }
+      if (body.message === "respuesta perdida sin turno" && attempt === 1) {
+        // La conexión cae antes de que el servidor persista el UUID.
+        req.socket.destroy();
+        return;
+      }
       chat.turns.push(baseTurn);
       if (body.message === "consulta lenta") {
         await new Promise((resolveWait) => setTimeout(resolveWait, 600));
@@ -269,6 +274,20 @@ try {
   await page.getByText("Resultado reconciliado", { exact: true }).waitFor();
   const completedLossPosts = posts.filter((post) => post.message === "respuesta perdida completada");
   ok("GET reemplaza la incertidumbre local con la respuesta completada del servidor", completedLossPosts.length === 1 && !(await page.getByRole("alert").filter({ hasText: /No pudimos confirmar/ }).count()) && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+
+  await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida sin turno");
+  await page.getByRole("button", { name: "Enviar" }).click();
+  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
+  const absentPost = posts.filter((post) => post.message === "respuesta perdida sin turno");
+  await page.getByRole("button", { name: "Consultar estado" }).click();
+  await page.getByText("El servidor no guardó este mensaje", { exact: false }).waitFor();
+  const absentComposer = page.getByRole("textbox", { name: "Mensaje para Secretaria" });
+  ok("GET sin el UUID reconcilia la respuesta perdida y restaura el texto exacto", (await absentComposer.inputValue()) === "respuesta perdida sin turno" && await page.getByText("respuesta perdida sin turno", { exact: true }).count() === 0);
+  ok("la ausencia habilita una recuperación explícita sin POST automático", absentPost.length === 1 && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+  await page.getByRole("button", { name: "Enviar" }).click();
+  await page.getByText("Respuesta de secretaria", { exact: true }).last().waitFor();
+  const absentPosts = posts.filter((post) => post.message === "respuesta perdida sin turno");
+  ok("el único reenvío explícito usa el UUID original", absentPosts.length === 2 && absentPosts[0].requestId === absentPosts[1].requestId);
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida");
   await page.getByRole("button", { name: "Enviar" }).click();

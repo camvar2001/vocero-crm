@@ -372,8 +372,8 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         } else {
           writeRecovery(body.chatId, null);
           setRecovery(null);
-          writeDraft(body.chatId, "");
-          setDraft((current) => current === saved.message ? "" : current);
+          // GET recupera la respuesta, nunca borra texto escrito después del POST.
+          if (initial) setDraft(readDraft(body.chatId));
           setRequestError(null);
         }
       } else if (saved) {
@@ -383,8 +383,11 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         const safeToResubmit = { ...saved, state: "not_persisted" as const };
         writeRecovery(body.chatId, safeToResubmit);
         setRecovery(safeToResubmit);
-        setDraft(saved.message);
-        writeDraft(body.chatId, saved.message);
+        setDraft((current) => {
+          const next = current || saved.message;
+          writeDraft(body.chatId, next);
+          return next;
+        });
         setRequestError("El servidor no guardó este mensaje. Revísalo y envíalo cuando quieras.");
       } else {
         setRecovery(null);

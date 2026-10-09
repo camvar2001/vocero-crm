@@ -32,7 +32,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Existing baseline tests
-        run: pnpm exec vitest run --exclude "tests/unit/inmob*.test.ts"
+        run: pnpm exec vitest run --exclude "tests/unit/inmob*.test.ts" --exclude "tests/unit/native-localonlybooking.test.ts"
       - name: Feature red tests
         run: pnpm exec vitest run tests/unit/inmob tests/unit/native-localonlybooking.test.ts
 

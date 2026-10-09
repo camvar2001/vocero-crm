@@ -330,15 +330,31 @@ try {
   await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
-  ok("la respuesta incierta queda persistida sin reenviar al recargar", uncertainPosts === 1 && posts.filter((post) => post.message === "respuesta perdida").length === 1 && await page.getByRole("button", { name: "Continuar con otra consulta" }).isVisible());
+  ok("la respuesta incierta queda persistida sin reenviar al recargar", uncertainPosts === 1 && posts.filter((post) => post.message === "respuesta perdida").length === 1 && await page.getByRole("button", { name: "Continuar con otra consulta" }).first().isVisible());
   ok("el envío permanece bloqueado hasta reconocer la incertidumbre", await page.getByRole("button", { name: "Enviar" }).isDisabled());
-  await page.getByRole("button", { name: "Continuar con otra consulta" }).click();
+  ok("el motivo del bloqueo y el control están junto al composer", await page.locator("footer").getByRole("button", { name: "Continuar con otra consulta" }).count() === 1);
+  await page.getByRole("button", { name: "Continuar con otra consulta" }).first().click();
+  await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("borrador conservado tras reconocer");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).waitFor();
+  ok("reconocer la incertidumbre sobrevive a recarga sin perder el borrador", await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue() === "borrador conservado tras reconocer" && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+  if (await page.getByRole("button", { name: "Continuar con otra consulta" }).count()) {
+    await page.getByRole("button", { name: "Continuar con otra consulta" }).first().click();
+  }
   const secretaryComposer = page.getByRole("textbox", { name: "Mensaje para Secretaria" });
   await secretaryComposer.fill("respuesta perdida");
   ok("la misma solicitud incierta nunca se ofrece para reenvío", await page.getByRole("button", { name: "Enviar" }).isDisabled() && posts.filter((post) => post.message === "respuesta perdida").length === 1);
   await secretaryComposer.fill("otra consulta después de revisar");
   await page.getByRole("button", { name: "Enviar" }).click();
   await page.getByText("Respuesta de secretaria", { exact: true }).last().waitFor();
+
+  // Una pestaña nueva no tiene el reconocimiento local de la pestaña anterior.
+  // El historial demuestra que el usuario ya continuó con otra solicitud.
+  const recoveredTab = await context.newPage();
+  await recoveredTab.goto(`${BASE}/?agent=secretaria`);
+  await recoveredTab.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("nueva consulta desde otra pestaña");
+  ok("incertidumbre histórica no bloquea nuevas consultas en una pestaña nueva", !(await recoveredTab.getByRole("button", { name: "Enviar" }).isDisabled()));
+  await recoveredTab.close();
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("contenido no confiable");
   await page.getByRole("button", { name: "Enviar" }).click();

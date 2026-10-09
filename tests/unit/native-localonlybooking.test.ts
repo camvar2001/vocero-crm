@@ -46,6 +46,14 @@ vi.mock("@/server/agenda/connectors", () => ({
   bindConnector,
   markConnectorAuthError: async () => {},
 }));
+vi.mock("@/server/agenda/connectors/types", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/server/agenda/connectors/types")>();
+  return {
+    ...original,
+    LOCAL_ONLY_CONNECTOR_ID: "local",
+    isLocalOnlyConnector: (connectorId: string | null | undefined) => connectorId === "local",
+  };
+});
 vi.mock("@/server/leads/stage-history", () => ({
   moveLeadToStage: async () => ({ ok: true }),
 }));
@@ -129,6 +137,7 @@ describe("citas nativas locales de Secretaria", () => {
       source: "manual",
       requireOffer: false,
       delivery: "local-only",
+      advanceLead: false,
     });
 
     expect(result.booking.isTest).toBe(false);

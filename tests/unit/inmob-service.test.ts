@@ -16,6 +16,9 @@ function fakeRepository(overrides: Record<string, unknown> = {}) {
     completeTurn: vi.fn(async () => undefined),
     failTurn: vi.fn(async () => undefined),
     markTurnUncertain: vi.fn(async () => undefined),
+    claimToolAction: vi.fn(async () => ({ kind: "claimed", actionId: "ita_1" })),
+    finishToolAction: vi.fn(async () => undefined),
+    markToolActionUncertain: vi.fn(async () => undefined),
     expireRunningTurns: vi.fn(async () => 0),
     readChat: vi.fn(async () => ({ chatId: "iwc_1", agent: "buscador", turns: [] })),
     ...overrides,
@@ -38,7 +41,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     });
     const gateway = vi.fn(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
     const result = await service.submitMessage({ ...input, message: "Un texto diferente" });
 
@@ -53,7 +56,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     const repository = fakeRepository({ findTurn: vi.fn(async () => stored) });
     const gateway = vi.fn(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
     const result = await service.submitMessage(input);
 
@@ -67,7 +70,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     const repository = fakeRepository({ claimTurn: vi.fn(async () => ({ kind: "chat_busy" })) });
     const gateway = vi.fn(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
     const result = await service.submitMessage(input);
 
@@ -85,7 +88,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     }) });
     const gateway = vi.fn(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
     const results = await Promise.all([
       service.submitMessage(input),
@@ -107,7 +110,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     });
     const gateway = vi.fn(async () => { events.push("gateway"); return gatewayReply; });
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
     const result = await service.submitMessage(input);
 
@@ -124,7 +127,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     const repository = fakeRepository();
     const gateway = vi.fn(async () => { throw new Error("gateway timeout"); });
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
     const result = await service.submitMessage(input);
 
@@ -157,13 +160,13 @@ describe("INMOB service claims, replay safety, and recovery", () => {
       .mockResolvedValueOnce(finalReply);
     const executeTool = vi.fn(async () => ({ ok: true, result: { slots: [{ startUtc: "2026-10-09T15:00:00.000Z" }] } }));
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway, executeTool, now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const service = createInmobService({ repository, gateway, executeTool, identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
     const result = await service.submitMessage({ ...input, agent: "secretaria" });
 
     expect(result.statusCode).toBe(200);
     expect(executeTool).toHaveBeenCalledOnce();
-    expect(executeTool).toHaveBeenCalledWith("org_primary", toolRequest.tool);
+    expect(executeTool).toHaveBeenCalledWith("org_primary", toolRequest.tool, "usr_owner");
     expect(gateway).toHaveBeenCalledTimes(2);
     expect(gateway.mock.calls[1]?.[0]).toMatchObject({
       requestId: input.requestId,
@@ -173,6 +176,56 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     });
   });
 
+  it("does not execute a reused toolCallId with a different input hash", async () => {
+    const toolRequest = {
+      version: 1,
+      requestId: input.requestId,
+      agent: "secretaria",
+      status: "tool_request",
+      toolCallId: "c3c3c3c3-c3c3-43c3-83c3-c3c3c3c3c3c3",
+      tool: { name: "agenda_cancel", arguments: { bookingId: "bk_other" } },
+    };
+    const repository = fakeRepository({
+      claimToolAction: vi.fn(async () => ({ kind: "conflict" })),
+    });
+    const gateway = vi.fn(async () => toolRequest);
+    const executeTool = vi.fn(async () => ({ ok: true, result: {} }));
+    const { createInmobService } = await import("@/server/inmob/service");
+    const service = createInmobService({ repository, gateway, executeTool, identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
+
+    const result = await service.submitMessage({ ...input, agent: "secretaria" });
+
+    expect(result.statusCode).toBe(409);
+    expect(result.body).toMatchObject({ errorCode: "tool_conflict" });
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(repository.markTurnUncertain).toHaveBeenCalledOnce();
+    expect(gateway).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a possibly committed native action uncertain and stops the continuation", async () => {
+    const toolRequest = {
+      version: 1,
+      requestId: input.requestId,
+      agent: "secretaria",
+      status: "tool_request",
+      toolCallId: "c3c3c3c3-c3c3-43c3-83c3-c3c3c3c3c3c3",
+      tool: { name: "agenda_create", arguments: { contactId: "ct_1", startUtc: "2026-10-09T15:00:00.000Z" } },
+    };
+    const repository = fakeRepository();
+    const gateway = vi.fn(async () => toolRequest);
+    const executeTool = vi.fn(async () => ({ ok: false, uncertain: true, result: { error: "No se pudo confirmar" } }));
+    const { createInmobService } = await import("@/server/inmob/service");
+    const service = createInmobService({ repository, gateway, executeTool, identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
+
+    const result = await service.submitMessage({ ...input, agent: "secretaria" });
+
+    expect(result.statusCode).toBe(202);
+    expect(result.body).toMatchObject({ turn: { status: "uncertain" } });
+    expect(repository.markToolActionUncertain).toHaveBeenCalledOnce();
+    expect(repository.finishToolAction).not.toHaveBeenCalled();
+    expect(gateway).toHaveBeenCalledOnce();
+  });
+
   it("turns expired running work into uncertain through an atomic running-only transition", async () => {
     const repository = fakeRepository({ expireRunningTurns: vi.fn(async (cutoff: Date) => {
       expect(cutoff.toISOString()).toBe("2026-10-08T11:59:10.000Z");
@@ -180,7 +233,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     }) });
     const now = () => new Date("2026-10-08T12:00:00.000Z");
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway: vi.fn(), executeTool: vi.fn(), now, turnTimeoutMs: 50_000 });
+    const service = createInmobService({ repository, gateway: vi.fn(), executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now, turnTimeoutMs: 50_000 });
 
     await service.getChat({ organizationId: input.organizationId, userId: input.userId, agent: input.agent });
 
@@ -201,7 +254,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
       })),
     });
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway: vi.fn(), executeTool: vi.fn(), now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const service = createInmobService({ repository, gateway: vi.fn(), executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
     const chat = await service.getChat({ organizationId: input.organizationId, userId: input.userId, agent: input.agent });
 
@@ -211,19 +264,19 @@ describe("INMOB service claims, replay safety, and recovery", () => {
 
   it("bounds completed context to 20 turns and 32000 characters", async () => {
     const history = Array.from({ length: 25 }, (_, index) => ({
-      role: index % 2 === 0 ? "user" : "assistant",
-      content: `${index}:` + "x".repeat(2000),
+      message: `${index}:` + "u".repeat(795),
+      reply: `${index}:` + "a".repeat(795),
     }));
     const repository = fakeRepository({ listHistory: vi.fn(async () => history) });
     const gateway = vi.fn(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
-    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
     await service.submitMessage(input);
 
     const sentHistory = gateway.mock.calls[0]?.[0]?.history as { role: string; content: string }[];
-    expect(sentHistory).toHaveLength(20);
+    expect(sentHistory).toHaveLength(40);
     expect(sentHistory.reduce((sum, turn) => sum + turn.content.length, 0)).toBeLessThanOrEqual(32_000);
-    expect(sentHistory[0]?.content).toContain("15:");
+    expect(sentHistory[0]?.content).toContain("5:");
   });
 });

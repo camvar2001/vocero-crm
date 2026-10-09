@@ -1168,3 +1168,106 @@ export const capiSettings = pgTable(
   },
   (t) => [uniqueIndex("capi_settings_org_uq").on(t.organizationId)]
 );
+
+/** Chats web del módulo Century: independientes de conversaciones/canales. */
+export const inmobWebChat = pgTable(
+  "inmob_web_chat",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    agent: text("agent", { enum: ["secretaria", "buscador"] }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("inmob_web_chat_org_user_agent_uq").on(
+      t.organizationId,
+      t.userId,
+      t.agent
+    ),
+    index("inmob_web_chat_org_user_idx").on(t.organizationId, t.userId),
+  ]
+);
+
+/** Un envío del usuario y su respuesta durable, con claim único por chat. */
+export const inmobWebTurn = pgTable(
+  "inmob_web_turn",
+  {
+    id: text("id").primaryKey(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => inmobWebChat.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    message: text("message").notNull(),
+    reply: text("reply"),
+    results: jsonb("results").notNull().default([]),
+    status: text("status", {
+      enum: ["running", "completed", "failed", "uncertain"],
+    })
+      .notNull()
+      .default("running"),
+    errorCode: text("error_code"),
+    claimedAt: timestamp("claimed_at").notNull().defaultNow(),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("inmob_web_turn_org_user_request_uq").on(
+      t.organizationId,
+      t.userId,
+      t.requestId
+    ),
+    index("inmob_web_turn_org_user_created_idx").on(
+      t.organizationId,
+      t.userId,
+      t.createdAt
+    ),
+    index("inmob_web_turn_chat_created_idx").on(t.chatId, t.createdAt),
+    uniqueIndex("inmob_web_turn_chat_running_uq")
+      .on(t.chatId)
+      .where(sql`${t.status} = 'running'`),
+  ]
+);
+
+/** Ledger para que una acción local de Secretaria nunca se ejecute dos veces. */
+export const inmobToolAction = pgTable(
+  "inmob_tool_action",
+  {
+    id: text("id").primaryKey(),
+    turnId: text("turn_id")
+      .notNull()
+      .references(() => inmobWebTurn.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    toolCallId: text("tool_call_id").notNull(),
+    name: text("name").notNull(),
+    inputHash: text("input_hash").notNull(),
+    status: text("status", {
+      enum: ["running", "completed", "failed", "uncertain"],
+    })
+      .notNull()
+      .default("running"),
+    result: jsonb("result"),
+    claimedAt: timestamp("claimed_at").notNull().defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (t) => [
+    uniqueIndex("inmob_tool_action_turn_call_uq").on(t.turnId, t.toolCallId),
+    index("inmob_tool_action_org_turn_idx").on(t.organizationId, t.turnId),
+  ]
+);

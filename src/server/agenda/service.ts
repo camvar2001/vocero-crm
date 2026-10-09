@@ -21,7 +21,11 @@ import {
   bindConnector,
   markConnectorAuthError,
 } from "@/server/agenda/connectors";
-import { ConnectorError } from "@/server/agenda/connectors/types";
+import {
+  ConnectorError,
+  isLocalOnlyConnector,
+  LOCAL_ONLY_CONNECTOR_ID,
+} from "@/server/agenda/connectors/types";
 import { moveLeadToStage } from "@/server/leads/stage-history";
 import { publish } from "@/server/events/bus";
 
@@ -89,6 +93,10 @@ export async function createSessionBooking(input: {
   /** Camino manual del operador. */
   contactId?: string | null;
   notes?: string | null;
+  /** Cita interna de Secretaria: persiste sin entregar a proveedores. */
+  delivery?: "local-only";
+  /** Evita avanzar el pipeline desde una acción que solo agenda una visita. */
+  advanceLead?: boolean;
   /**
    * true ⇒ exige que el instante figure entre los ofrecidos a la conversación
    * (agente/bot). El operador elige de la disponibilidad que está viendo, así
@@ -195,7 +203,9 @@ export async function createSessionBooking(input: {
         durationMinutes: settings.slotMinutes,
         // Copia histórica: si el negocio cambia de conector, esta cita conserva
         // el que le tocó y sigue hablando con él al moverse o cancelarse.
-        connector: settings.connector,
+        connector: input.delivery === "local-only"
+          ? LOCAL_ONLY_CONNECTOR_ID
+          : settings.connector,
         isTest,
         notes: input.notes ?? null,
       })
@@ -228,13 +238,15 @@ export async function createSessionBooking(input: {
 
   // Efectos secundarios: ninguno puede revertir la cita.
   const delivered = await deliverMeeting(booking, settings, contactName);
-  await advanceLeadStage(
-    input.organizationId,
-    contactId,
-    input.source === "ai" ? "bot" : "dueno"
-  ).catch((err) => {
-    console.warn(`[agenda] avance de etapa falló: ${err}`);
-  });
+  if (input.advanceLead !== false) {
+    await advanceLeadStage(
+      input.organizationId,
+      contactId,
+      input.source === "ai" ? "bot" : "dueno"
+    ).catch((err) => {
+      console.warn(`[agenda] avance de etapa falló: ${err}`);
+    });
+  }
 
   publish(input.organizationId, {
     type: "booking.updated",
@@ -513,7 +525,7 @@ async function deliverMeeting(
   settings: CalendarSettings,
   contactName: string
 ): Promise<BookingRow> {
-  if (booking.isTest) return booking;
+  if (booking.isTest || isLocalOnlyConnector(booking.connector)) return booking;
   const connectorId = (booking.connector ?? settings.connector) as ConnectorId;
 
   try {
@@ -595,7 +607,11 @@ async function withConnector(
     externalRef: string
   ) => Promise<void>
 ): Promise<void> {
-  if (booking.isTest || !booking.externalRef) return;
+  if (
+    booking.isTest ||
+    isLocalOnlyConnector(booking.connector) ||
+    !booking.externalRef
+  ) return;
   const connectorId = (booking.connector ?? settings.connector) as ConnectorId;
   try {
     const conn = await bindConnector(

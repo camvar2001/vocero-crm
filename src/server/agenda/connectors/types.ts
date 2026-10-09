@@ -1,5 +1,14 @@
 import type { ConnectorId } from "@/lib/agenda-connectors";
 
+/** Valor durable reservado a citas internas; no es seleccionable en Ajustes. */
+export const LOCAL_ONLY_CONNECTOR_ID = "local" as const;
+
+export function isLocalOnlyConnector(
+  connectorId: string | null | undefined
+): boolean {
+  return connectorId === LOCAL_ONLY_CONNECTOR_ID;
+}
+
 /**
  * 015 — El contrato público de un conector de agenda.
  *

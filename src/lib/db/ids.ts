@@ -33,6 +33,9 @@ const prefixes = {
   telegramUpdate: "tgu",
   telegramWork: "tgw",
   telegramDelivery: "tgd",
+  inmobChat: "iwc",
+  inmobTurn: "iwt",
+  inmobToolAction: "ita",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

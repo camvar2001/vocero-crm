@@ -7,9 +7,10 @@ const rescheduleBooking = vi.fn();
 const cancelBooking = vi.fn();
 const getContactById = vi.fn();
 const searchContacts = vi.fn();
-const createContact = vi.fn();
+const createManualContact = vi.fn();
 const agendaEnabled = vi.fn(() => true);
 const inmobEnabled = vi.fn(() => true);
+const localBookingLookup = vi.fn(async () => [{ connector: "local" }]);
 
 vi.mock("@/server/agenda/flag", () => ({ agendaEnabled }));
 vi.mock("@/server/inmob/flag", () => ({ inmobEnabled }));
@@ -20,8 +21,20 @@ vi.mock("@/server/agenda/service", () => ({
   rescheduleBooking,
   cancelBooking,
 }));
-vi.mock("@/server/contacts", () => ({ getContactById }));
-vi.mock("@/server/inmob/contacts", () => ({ searchContacts, createContact }));
+vi.mock("@/server/contacts", () => ({
+  getContactById,
+  searchContactsForTool: searchContacts,
+  createManualContact,
+}));
+vi.mock("@/lib/db", () => ({
+  getDb: () => ({ select: () => ({ from: () => ({ where: () => ({ limit: localBookingLookup }) }) }) }),
+  schema: { booking: { organizationId: "organizationId", id: "id", connector: "connector" } },
+}));
+vi.mock("@/lib/db/tenant", () => ({ scoped: (_column: unknown, organizationId: string, ...conditions: unknown[]) => ({ organizationId, conditions }) }));
+vi.mock("drizzle-orm", async (importOriginal) => ({
+  ...await importOriginal<typeof import("drizzle-orm")>(),
+  eq: (column: unknown, value: unknown) => ({ column, value }),
+}));
 
 describe("dispatcher nativo de Secretaria", () => {
   beforeEach(() => {
@@ -33,11 +46,12 @@ describe("dispatcher nativo de Secretaria", () => {
     ]);
     listBookingsInRange.mockResolvedValue({ bookings: [], truncated: false });
     getContactById.mockResolvedValue({ id: "ct_owned", organizationId: "org_a", name: "Ana" });
-    createSessionBooking.mockResolvedValue({ booking: { id: "bk_new" }, label: "mié 14 oct, 09:00" });
+    createSessionBooking.mockResolvedValue({ booking: { id: "bk_new", scheduledAt: new Date("2026-10-14T13:00:00.000Z") }, label: "mié 14 oct, 09:00" });
     rescheduleBooking.mockResolvedValue({ booking: { id: "bk_owned" }, label: "mié 14 oct, 09:00" });
     cancelBooking.mockResolvedValue(undefined);
     searchContacts.mockResolvedValue([]);
-    createContact.mockResolvedValue({ id: "ct_new", name: "Ana" });
+    createManualContact.mockResolvedValue({ ok: true, contact: { id: "ct_new", name: "Ana" }, leadId: "ld_new" });
+    localBookingLookup.mockResolvedValue([{ connector: "local" }]);
   });
 
   it("rechaza propiedades adicionales antes de despachar cualquier acción", async () => {
@@ -96,6 +110,8 @@ describe("dispatcher nativo de Secretaria", () => {
       contactId: "ct_owned",
       source: "manual",
       requireOffer: false,
+      delivery: "local-only",
+      advanceLead: false,
       notes: "Visita de prueba",
     }));
   });
@@ -131,5 +147,31 @@ describe("dispatcher nativo de Secretaria", () => {
 
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result)).not.toContain("secret");
+  });
+
+  it("no reprograma una cita conectada a Zoom desde Secretaria", async () => {
+    const { executeSecretariaTool } = await import("@/server/inmob/tools");
+    localBookingLookup.mockResolvedValue([{ connector: "zoom" }]);
+
+    const result = await executeSecretariaTool("org_a", {
+      name: "agenda_update",
+      arguments: { bookingId: "bk_zoom", startUtc: "2026-10-14T13:00:00.000Z" },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(rescheduleBooking).not.toHaveBeenCalled();
+  });
+
+  it("no cancela una cita conectada a Google Calendar desde Secretaria", async () => {
+    const { executeSecretariaTool } = await import("@/server/inmob/tools");
+    localBookingLookup.mockResolvedValue([{ connector: "google" }]);
+
+    const result = await executeSecretariaTool("org_a", {
+      name: "agenda_cancel",
+      arguments: { bookingId: "bk_google" },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(cancelBooking).not.toHaveBeenCalled();
   });
 });

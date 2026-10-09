@@ -330,20 +330,16 @@ try {
   await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
-  ok("la respuesta incierta queda persistida sin reenviar al recargar", uncertainPosts === 1 && posts.filter((post) => post.message === "respuesta perdida").length === 1 && await page.getByRole("button", { name: "Continuar con otra consulta" }).first().isVisible());
-  ok("el envío permanece bloqueado hasta reconocer la incertidumbre", await page.getByRole("button", { name: "Enviar" }).isDisabled());
-  ok("el motivo del bloqueo y el control están junto al composer", await page.locator("footer").getByRole("button", { name: "Continuar con otra consulta" }).count() === 1);
-  await page.getByRole("button", { name: "Continuar con otra consulta" }).first().click();
-  await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("borrador conservado tras reconocer");
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).waitFor();
-  ok("reconocer la incertidumbre sobrevive a recarga sin perder el borrador", await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue() === "borrador conservado tras reconocer" && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+  ok("la respuesta incierta permanece visible sin reenviar", uncertainPosts === 1 && posts.filter((post) => post.message === "respuesta perdida").length === 1);
+  await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("otra consulta después de revisar");
+  ok("una incertidumbre permite conversar sin reconocimiento manual", !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+  ok("no exige reconocer ni consultar estado para continuar", await page.getByRole("button", { name: "Continuar con otra consulta" }).count() === 0);
   if (await page.getByRole("button", { name: "Continuar con otra consulta" }).count()) {
     await page.getByRole("button", { name: "Continuar con otra consulta" }).first().click();
   }
   const secretaryComposer = page.getByRole("textbox", { name: "Mensaje para Secretaria" });
   await secretaryComposer.fill("respuesta perdida");
-  ok("la misma solicitud incierta nunca se ofrece para reenvío", await page.getByRole("button", { name: "Enviar" }).isDisabled() && posts.filter((post) => post.message === "respuesta perdida").length === 1);
+  ok("Secretaria no reenvía el texto exacto de una acción incierta", await page.getByRole("button", { name: "Enviar" }).isDisabled() && posts.filter((post) => post.message === "respuesta perdida").length === 1);
   await secretaryComposer.fill("otra consulta después de revisar");
   await page.getByRole("button", { name: "Enviar" }).click();
   await page.getByText("Respuesta de secretaria", { exact: true }).last().waitFor();

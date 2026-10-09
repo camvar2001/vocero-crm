@@ -1,6 +1,7 @@
 import { InmobAgentSchema, InmobPostBodySchema } from "@/lib/inmob";
 import { requireSession } from "@/lib/auth/session";
 import { apiError } from "@/lib/api";
+import { getEnv } from "@/lib/env";
 import { inmobDisabledResponse, inmobEnabled } from "@/server/inmob/flag";
 import { getInmobChat, submitInmobMessage } from "@/server/inmob/service";
 
@@ -33,11 +34,10 @@ async function authorizedSession() {
   }
 }
 
-function sameOrigin(req: Request): boolean {
-  const origin = req.headers.get("origin");
+function sameOrigin(origin: string | null): boolean {
   if (!origin) return false;
   try {
-    return new URL(origin).origin === new URL(req.url).origin;
+    return new URL(origin).origin === new URL(getEnv().APP_BASE_URL).origin;
   } catch {
     return false;
   }
@@ -99,7 +99,7 @@ export async function POST(req: Request, context: RouteContext): Promise<Respons
   if (!agent) return apiError(404, "not_found", "Agente no encontrado");
   const auth = await authorizedSession();
   if (!auth.ok) return auth.response;
-  if (!sameOrigin(req)) return apiError(403, "origin_forbidden", "Origen no autorizado");
+  if (!sameOrigin(req.headers.get("origin"))) return apiError(403, "origin_forbidden", "Origen no autorizado");
 
   const parsedBody = await readLimitedJson(req);
   if (!parsedBody.ok) return apiError(400, "invalid_body", "El body debe ser JSON válido de hasta 16 KiB");

@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   enabled: true,
+  appOrigin: "https://vocero.example",
   ownerId: "usr_owner",
   session: { userId: "usr_owner", organizationId: "org_primary", role: "owner" } as
     | { userId: string; organizationId: string; role: string }
@@ -31,6 +32,7 @@ vi.mock("@/lib/auth/session", () => ({
     return state.session;
   },
 }));
+vi.mock("@/lib/env", () => ({ getEnv: () => ({ APP_BASE_URL: state.appOrigin }) }));
 vi.mock("@/server/inmob/flag", () => ({
   inmobEnabled: () => state.enabled,
   inmobDisabledResponse: () => new Response(null, { status: 404 }),
@@ -43,7 +45,7 @@ vi.mock("@/server/inmob/service", () => ({
 const { GET, POST } = await import("@/app/api/inmob/chats/[agent]/route");
 const OWNER_ENV = process.env.INMOB_OWNER_USER_ID;
 
-function request(method: "GET" | "POST", body?: unknown, origin = "http://localhost") {
+function request(method: "GET" | "POST", body?: unknown, origin = state.appOrigin) {
   return new Request("http://localhost/api/inmob/chats/buscador", {
     method,
     headers: {
@@ -100,6 +102,38 @@ describe("INMOB chat API authorization and input contract", () => {
     expect(state.submit).not.toHaveBeenCalled();
   });
 
+  it("accepts the configured public origin when Next exposes an internal request URL", async () => {
+    const response = await POST(new Request("http://0.0.0.0:3000/api/inmob/chats/buscador", {
+      method: "POST",
+      headers: {
+        origin: state.appOrigin,
+        host: "attacker.example",
+        "x-forwarded-host": "attacker.example",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ requestId: "a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1", message: "hola" }),
+    }), route);
+
+    expect(response.status).toBe(200);
+    expect(state.submit).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a mismatched Origin regardless of Host and forwarded host headers", async () => {
+    const response = await POST(new Request("http://0.0.0.0:3000/api/inmob/chats/buscador", {
+      method: "POST",
+      headers: {
+        origin: "https://attacker.example",
+        host: "vocero.example",
+        "x-forwarded-host": "vocero.example",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ requestId: "a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1", message: "hola" }),
+    }), route);
+
+    expect(response.status).toBe(403);
+    expect(state.submit).not.toHaveBeenCalled();
+  });
+
   it("accepts exactly the required POST keys and passes session identity from the server", async () => {
     const response = await POST(
       request("POST", { requestId: "a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1", message: "Buscar una casa" }),
@@ -147,7 +181,7 @@ describe("INMOB chat API authorization and input contract", () => {
     });
     const response = await POST(new Request("http://localhost/api/inmob/chats/buscador", {
       method: "POST",
-      headers: { origin: "http://localhost", "content-type": "application/json" },
+      headers: { origin: state.appOrigin, "content-type": "application/json" },
       body: tooLarge,
     }), route);
     expect(response.status).toBe(400);

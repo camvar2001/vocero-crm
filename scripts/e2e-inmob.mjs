@@ -298,9 +298,11 @@ try {
   await reconciledReply.first().waitFor();
   const completedLossPosts = posts.filter((post) => post.message === "respuesta perdida completada");
   const completedLossRows = chats.get("secretaria").turns.filter((turn) => turn.message === "respuesta perdida completada");
+  const composerAfterCompletedRecovery = page.getByRole("textbox", { name: "Mensaje para Secretaria" });
+  const uncertaintyAlertCount = await page.getByRole("alert").filter({ hasText: /No pudimos confirmar/ }).count();
   ok("la respuesta reconciliada se muestra una sola vez", await reconciledReply.count() === 1, `renderizadas=${await reconciledReply.count()}`);
   ok("el requestId de respuesta perdida produce un POST y una sola fila persistida", completedLossPosts.length === 1 && completedLossRows.length === 1, `POST=${completedLossPosts.length}, filas=${completedLossRows.length}`);
-  ok("GET reemplaza la incertidumbre local con la respuesta completada del servidor", !(await page.getByRole("alert").filter({ hasText: /No pudimos confirmar/ }).count()) && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+  ok("GET reemplaza la incertidumbre local con la respuesta completada del servidor", uncertaintyAlertCount === 0 && !(await composerAfterCompletedRecovery.isDisabled()), `alertas=${uncertaintyAlertCount}, composerDisabled=${await composerAfterCompletedRecovery.isDisabled()}, enviarDisabled=${await page.getByRole("button", { name: "Enviar" }).isDisabled()}`);
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida sin turno");
   await page.getByRole("button", { name: "Enviar" }).click();
@@ -309,7 +311,9 @@ try {
   await page.getByRole("button", { name: "Consultar estado" }).click();
   await page.getByText("El servidor no guardó este mensaje", { exact: false }).waitFor();
   const absentComposer = page.getByRole("textbox", { name: "Mensaje para Secretaria" });
-  ok("GET sin el UUID reconcilia la respuesta perdida y restaura el texto exacto", (await absentComposer.inputValue()) === "respuesta perdida sin turno" && await page.getByText("respuesta perdida sin turno", { exact: true }).count() === 0);
+  const restoredDraft = await absentComposer.inputValue();
+  const ghostTurnCount = await page.getByRole("list", { name: "Historial de Secretaria" }).getByText("respuesta perdida sin turno", { exact: true }).count();
+  ok("GET sin el UUID reconcilia la respuesta perdida y restaura el texto exacto", restoredDraft === "respuesta perdida sin turno" && ghostTurnCount === 0, `draft=${JSON.stringify(restoredDraft)}, filasHistorial=${ghostTurnCount}`);
   ok("la ausencia habilita una recuperación explícita sin POST automático", absentPost.length === 1 && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
   await page.getByRole("button", { name: "Enviar" }).click();
   await page.getByText("Respuesta de secretaria", { exact: true }).last().waitFor();

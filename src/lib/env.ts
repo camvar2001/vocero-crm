@@ -38,6 +38,14 @@ const envSchema = z.object({
   // conversacion, no se le reporta nada a Meta y la superficie da 404.
   // Ej.: ATRIBUCION=on
   ATRIBUCION: z.string().optional(),
+  // Chats inmobiliarios opcionales; cada módulo comprueba sus variables sin
+  // hacer que una configuración incompleta afecte al arranque del CRM.
+  INMOB: z.string().optional(),
+  INMOB_OWNER_USER_ID: z.string().optional(),
+  INMOB_N8N_BASE_URL: z.string().optional(),
+  INMOB_N8N_TOKEN: z.string().optional(),
+  INMOB_TEST_ADVISOR_ID: z.string().optional(),
+  INMOB_TEST_PHONE: z.string().optional(),
   // 015: bases de los conectores. Solo se sobreescriben para apuntar a los
   // mocks en el self-test; en producción se usan las reales.
   ZOOM_BASE_URL: z.string().url().default("https://api.zoom.us/v2"),

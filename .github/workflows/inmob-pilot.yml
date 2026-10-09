@@ -5,7 +5,7 @@ on:
     inputs:
       phase:
         type: choice
-        options: [verify, red, ui-red]
+        options: [verify, core, red, ui-red]
         default: verify
   push:
     branches: [codex/century-agentes-web]
@@ -52,7 +52,7 @@ jobs:
       - run: node scripts/e2e-inmob.mjs
 
   verify:
-    if: github.event_name == 'workflow_dispatch' && inputs.phase == 'verify'
+    if: github.event_name == 'workflow_dispatch' && (inputs.phase == 'verify' || inputs.phase == 'core')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -64,6 +64,17 @@ jobs:
           - inmob: "on"
             agenda: "on"
             channels: "whatsapp,instagram,messenger,telegram"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: inmob_ci
+          POSTGRES_PASSWORD: inmob_ci
+          POSTGRES_DB: inmob_ci
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U inmob_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       CHANNELS: ${{ matrix.config.channels }}
       INMOB: ${{ matrix.config.inmob }}
@@ -84,8 +95,21 @@ jobs:
         if: ${{ !cancelled() }}
       - run: pnpm build
         if: ${{ !cancelled() }}
-      - name: Inmob browser behavior (mock gateway/local DB)
+      - name: Real PostgreSQL claims and isolation
         if: ${{ matrix.config.inmob == 'on' && !cancelled() }}
+        env:
+          DATABASE_URL: postgresql://inmob_ci:inmob_ci@localhost:5432/inmob_ci
+          APP_BASE_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: inmob-ci-fixture-secret
+          ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          META_WEBHOOK_VERIFY_TOKEN: inmob-ci-fixture
+          INMOB_DB_TEST: isolated-ci
+        run: |
+          pnpm db:migrate
+          pnpm exec esbuild scripts/inmob-db-test.ts --bundle --platform=node --format=esm --outfile=.tmp/inmob-db-test.mjs --alias:@=./src --packages=external
+          node .tmp/inmob-db-test.mjs
+      - name: Inmob browser behavior (mock gateway/local DB)
+        if: ${{ inputs.phase == 'verify' && matrix.config.inmob == 'on' && !cancelled() }}
         env:
           CHROME_PATH: /usr/bin/google-chrome
         run: node scripts/e2e-inmob.mjs

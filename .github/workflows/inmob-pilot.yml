@@ -5,7 +5,7 @@ on:
     inputs:
       phase:
         type: choice
-        options: [verify, red]
+        options: [verify, red, ui-red]
         default: verify
   push:
     branches: [codex/century-agentes-web]
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   red:
-    if: github.event_name == 'push' || inputs.phase == 'red'
+    if: inputs.phase == 'red'
     runs-on: ubuntu-latest
     env:
       NEXT_TELEMETRY_DISABLED: "1"
@@ -35,6 +35,21 @@ jobs:
         run: pnpm exec vitest run --exclude "tests/unit/inmob*.test.ts" --exclude "tests/unit/native-localonlybooking.test.ts"
       - name: Feature red tests
         run: pnpm exec vitest run tests/unit/inmob tests/unit/native-localonlybooking.test.ts
+
+  ui-red:
+    if: github.event_name == 'workflow_dispatch' && inputs.phase == 'ui-red'
+    runs-on: ubuntu-latest
+    env:
+      CHROME_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/e2e-inmob.mjs
 
   verify:
     if: github.event_name == 'workflow_dispatch' && inputs.phase == 'verify'

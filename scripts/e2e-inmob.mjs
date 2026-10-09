@@ -184,6 +184,7 @@ const server = createServer(async (req, res) => {
           results: [
             { title: "Enlace seguro", url: "https://example.test/inmueble", source: "Mock" },
             { title: "Enlace no válido", url: "javascript:window.xssRan=true", source: "Mock" },
+            { title: "Oferta sin enlace", source: "Portal local" },
           ],
         });
         json(res, 200, { chatId: chat.chatId, agent, turn: baseTurn });
@@ -344,7 +345,8 @@ try {
   ok("la respuesta externa se renderiza como texto, nunca como HTML", (await page.locator("img[onerror]").count()) === 0 && (await page.evaluate(() => window.xssRan)) !== true);
   const safeLink = page.getByRole("link", { name: /Enlace seguro/ });
   ok("los enlaces válidos usan HTTPS y rel seguro", await safeLink.getAttribute("href") === "https://example.test/inmueble" && (await safeLink.getAttribute("rel"))?.includes("noopener"));
-  ok("un enlace con esquema activo no se convierte en enlace", await page.getByRole("link", { name: /Enlace no válido/ }).count() === 0);
+  ok("un enlace con esquema activo conserva su oferta sin volverse enlace", await page.getByText("Enlace no válido", { exact: true }).isVisible() && await page.getByText("Fuente: Mock", { exact: true }).last().isVisible() && await page.getByRole("link", { name: /Enlace no válido/ }).count() === 0);
+  ok("una oferta sin URL conserva título y fuente sin crear enlace", await page.getByText("Oferta sin enlace", { exact: true }).isVisible() && await page.getByText("Fuente: Portal local", { exact: true }).isVisible() && await page.getByRole("link", { name: /Oferta sin enlace/ }).count() === 0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(100);

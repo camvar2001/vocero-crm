@@ -101,6 +101,28 @@ describe("cliente del gateway web", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts a valid result without a public listing URL or with an HTTPS URL", async () => {
+    const noUrl = { title: "Casa central", source: "catálogo" };
+    const withUrl = { ...noUrl, url: "https://century21.example/listing/1" };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...completed(), results: [noUrl] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...completed(), results: [withUrl] }), { status: 200 }));
+    const { postInmobGateway } = await import("@/server/inmob/client");
+
+    await expect(postInmobGateway(payload())).resolves.toMatchObject({ results: [noUrl] });
+    await expect(postInmobGateway(payload())).resolves.toMatchObject({ results: [withUrl] });
+  });
+
+  it("rejects a provided result URL that is not HTTP or HTTPS", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      ...completed(),
+      results: [{ title: "Casa central", source: "catálogo", url: "javascript:alert(1)" }],
+    }), { status: 200 }));
+    const { postInmobGateway } = await import("@/server/inmob/client");
+
+    await expect(postInmobGateway(payload())).rejects.toBeDefined();
+  });
+
   it("accepts a Secretaria tool request only with the strict discriminated fields", async () => {
     const toolRequest = {
       version: 1,

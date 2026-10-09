@@ -6,7 +6,7 @@ export type InmobAgent = z.infer<typeof InmobAgentSchema>;
 
 export const InmobResultSchema = z.object({
   title: z.string().trim().min(1).max(240),
-  url: z.string().url().refine((value) => ["http:", "https:"].includes(new URL(value).protocol)),
+  url: z.string().url().refine((value) => ["http:", "https:"].includes(new URL(value).protocol)).optional(),
   source: z.string().trim().min(1).max(120),
 }).strict();
 export type InmobResult = z.infer<typeof InmobResultSchema>;

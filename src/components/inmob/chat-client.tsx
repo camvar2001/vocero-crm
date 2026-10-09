@@ -139,7 +139,8 @@ function mergeTurn(turns: InmobTurn[], next: InmobTurn, authoritative = false): 
   return uniqueTurns(merged);
 }
 
-function safeHttpUrl(value: string): string | null {
+function safeHttpUrl(value: string | undefined): string | null {
+  if (!value) return null;
   try {
     const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
@@ -250,29 +251,38 @@ function TurnStatus({
 }
 
 function ResultCards({ results }: { results: InmobResult[] }) {
-  const safeResults = results.flatMap((result) => {
-    const url = safeHttpUrl(result.url);
-    return url ? [{ ...result, url }] : [];
-  });
-  if (!safeResults.length) return null;
+  if (!results.length) return null;
   return (
     <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-      {safeResults.map((result, index) => (
-        <li key={`${result.url}:${index}`}>
-          <a
-            href={result.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group block rounded-lg border border-border-strong bg-background px-3.5 py-3 transition-colors hover:border-brand-soft hover:bg-brand-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span className="block text-sm font-semibold text-foreground group-hover:text-brand-text">
+      {results.map((result, index) => {
+        const url = safeHttpUrl(result.url);
+        const className = "block rounded-lg border border-border-strong bg-background px-3.5 py-3";
+        const content = (
+          <>
+            <span className={`block text-sm font-semibold text-foreground ${url ? "group-hover:text-brand-text" : ""}`}>
               {result.title}
             </span>
             <span className="mt-1 block text-xs text-text-2">Fuente: {result.source}</span>
-            <span className="mt-2 block truncate text-[11px] text-brand-ink">{result.url}</span>
-          </a>
-        </li>
-      ))}
+            {url && <span className="mt-2 block truncate text-[11px] text-brand-ink">{url}</span>}
+          </>
+        );
+        return (
+          <li key={`${result.title}:${index}`}>
+            {url ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`group ${className} transition-colors hover:border-brand-soft hover:bg-brand-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+              >
+                {content}
+              </a>
+            ) : (
+              <div className={className}>{content}</div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

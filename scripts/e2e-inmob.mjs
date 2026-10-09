@@ -104,7 +104,9 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET") {
       getCount++;
       // La primera respuesta da tiempo a observar el estado inicial accesible.
-      if (getCount === 1) await new Promise((resolveWait) => setTimeout(resolveWait, 180));
+      // 900ms: en runners cargados el arranque de Chrome consume la ventana
+      // corta y la prueba flaquea sin que el componente haya cambiado.
+      if (getCount === 1) await new Promise((resolveWait) => setTimeout(resolveWait, 900));
       json(res, 200, chat);
       return;
     }
@@ -199,7 +201,7 @@ try {
   page.on("console", (message) => {
     if (message.type() === "error") console.error("Browser console:", message.text());
   });
-  await page.goto(BASE, { waitUntil: "domcontentloaded" });
+  await page.goto(BASE, { waitUntil: "commit" });
   await page.getByRole("status").filter({ hasText: /Cargando/ }).waitFor();
   ok("la carga inicial se anuncia con estado accesible", true);
   await page.getByRole("heading", { name: "Buscador" }).waitFor();

@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   red:
-    if: github.event_name == 'workflow_dispatch' && inputs.phase == 'red'
+    if: github.event_name == 'push' || inputs.phase == 'red'
     runs-on: ubuntu-latest
     env:
       NEXT_TELEMETRY_DISABLED: "1"
@@ -34,10 +34,10 @@ jobs:
       - name: Existing baseline tests
         run: pnpm exec vitest run --exclude "tests/unit/inmob*.test.ts"
       - name: Feature red tests
-        run: pnpm exec vitest run tests/unit/inmob
+        run: pnpm exec vitest run tests/unit/inmob tests/unit/native-localonlybooking.test.ts
 
   verify:
-    if: github.event_name != 'workflow_dispatch' || inputs.phase != 'red'
+    if: github.event_name == 'workflow_dispatch' && inputs.phase == 'verify'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -76,7 +76,7 @@ jobs:
         run: node scripts/e2e-inmob.mjs
 
   image:
-    if: (github.event_name != 'workflow_dispatch' || inputs.phase != 'red') && github.repository == 'camvar2001/vocero-crm' && github.ref == 'refs/heads/codex/century-agentes-web'
+    if: github.event_name == 'workflow_dispatch' && inputs.phase == 'verify' && github.repository == 'camvar2001/vocero-crm' && github.ref == 'refs/heads/codex/century-agentes-web'
     permissions:
       contents: read
       packages: write

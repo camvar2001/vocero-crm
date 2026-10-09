@@ -182,9 +182,10 @@ const server = createServer(async (req, res) => {
           status: "completed",
           reply: '<img src=x onerror="window.xssRan=true"> texto seguro',
           results: [
-            { title: "Enlace seguro", url: "https://example.test/inmueble", source: "Mock" },
-            { title: "Enlace no válido", url: "javascript:window.xssRan=true", source: "Mock" },
-            { title: "Oferta sin enlace", source: "Portal local" },
+            { title: "Enlace seguro", url: "https://example.test/inmueble", source: "c21" },
+            { title: "Enlace no válido", url: "javascript:window.xssRan=true", source: "remax" },
+            { title: "Oferta sin enlace", source: "ofertas" },
+            { title: "Casa · Venta · Santa Cruz · 100000 USD", url: "https://example.test/casa", source: "c21" },
           ],
         });
         json(res, 200, { chatId: chat.chatId, agent, turn: baseTurn });
@@ -345,8 +346,12 @@ try {
   ok("la respuesta externa se renderiza como texto, nunca como HTML", (await page.locator("img[onerror]").count()) === 0 && (await page.evaluate(() => window.xssRan)) !== true);
   const safeLink = page.getByRole("link", { name: /Enlace seguro/ });
   ok("los enlaces válidos usan HTTPS y rel seguro", await safeLink.getAttribute("href") === "https://example.test/inmueble" && (await safeLink.getAttribute("rel"))?.includes("noopener"));
-  ok("un enlace con esquema activo conserva su oferta sin volverse enlace", await page.getByText("Enlace no válido", { exact: true }).isVisible() && await page.getByText("Fuente: Mock", { exact: true }).last().isVisible() && await page.getByRole("link", { name: /Enlace no válido/ }).count() === 0);
-  ok("una oferta sin URL conserva título y fuente sin crear enlace", await page.getByText("Oferta sin enlace", { exact: true }).isVisible() && await page.getByText("Fuente: Portal local", { exact: true }).isVisible() && await page.getByRole("link", { name: /Oferta sin enlace/ }).count() === 0);
+  ok("las fuentes conocidas usan nombres legibles", await page.getByText("Century 21", { exact: true }).count() === 2 && await page.getByText("RE/MAX", { exact: true }).count() === 1 && await page.getByText("Ofertas internas", { exact: true }).count() === 1);
+  ok("un enlace con esquema activo conserva su oferta sin volverse enlace", await page.getByText("Enlace no válido", { exact: true }).isVisible() && await page.getByRole("link", { name: /Enlace no válido/ }).count() === 0);
+  ok("una oferta sin URL conserva título y fuente sin crear enlace", await page.getByText("Oferta sin enlace", { exact: true }).isVisible() && await page.getByRole("link", { name: /Oferta sin enlace/ }).count() === 0);
+  const formattedHouse = page.getByRole("link", { name: /Ver inmueble: Casa · Venta · Santa Cruz · 100000 USD/ });
+  ok("el título de casa se divide en líneas legibles sin perder detalles", await page.getByText("Casa", { exact: true }).isVisible() && await page.getByText("Venta · Santa Cruz · 100000 USD", { exact: true }).isVisible());
+  ok("la tarjeta muestra una acción clara y solo el host, no la URL larga", await formattedHouse.getByText("Ver inmueble", { exact: true }).isVisible() && await formattedHouse.getByText("example.test", { exact: true }).isVisible() && await page.getByText("https://example.test/casa", { exact: true }).count() === 0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(100);

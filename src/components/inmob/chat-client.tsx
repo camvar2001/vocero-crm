@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { AlertTriangle, ArrowUp, CalendarDays, Clock3, Search, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowUp, CalendarDays, Clock3, ExternalLink, Search, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { InmobAgent, InmobChat, InmobResult, InmobTurn } from "@/lib/inmob";
@@ -149,6 +149,27 @@ function safeHttpUrl(value: string | undefined): string | null {
   }
 }
 
+function resultSourceLabel(source: string): string {
+  const normalized = source.trim().toLocaleLowerCase();
+  const labels: Record<string, string> = {
+    oferta: "Ofertas internas",
+    ofertas: "Ofertas internas",
+    "ofertas internas": "Ofertas internas",
+    c21: "Century 21",
+    century21: "Century 21",
+    "century 21": "Century 21",
+    remax: "RE/MAX",
+    "re/max": "RE/MAX",
+  };
+  return labels[normalized] ?? source.trim();
+}
+
+function resultTitleParts(title: string): { main: string; details: string | null } {
+  const parts = title.split(/\s*·\s*/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 3) return { main: parts[0]!, details: parts.slice(1).join(" · ") };
+  return { main: title, details: null };
+}
+
 /** Enlaces web clicables dentro de texto plano, con el resto como nodos React. */
 function PlainText({ text }: { text: string }) {
   const parts = useMemo(() => {
@@ -256,29 +277,42 @@ function ResultCards({ results }: { results: InmobResult[] }) {
     <ul className="mt-3 grid gap-2 sm:grid-cols-2">
       {results.map((result, index) => {
         const url = safeHttpUrl(result.url);
-        const className = "block rounded-lg border border-border-strong bg-background px-3.5 py-3";
+        const { main, details } = resultTitleParts(result.title);
+        const source = resultSourceLabel(result.source);
+        const host = url ? new URL(url).hostname.replace(/^www\./i, "") : null;
         const content = (
-          <>
-            <span className={`block text-sm font-semibold text-foreground ${url ? "group-hover:text-brand-text" : ""}`}>
-              {result.title}
+          <div className="flex min-h-[112px] flex-col rounded-xl border border-border-strong bg-background p-3.5 transition-colors group-hover:border-brand-soft group-hover:bg-brand-tint sm:p-4">
+            <span className="w-fit rounded-full border border-brand-soft bg-brand-tint px-2.5 py-1 text-[10px] font-semibold leading-none text-brand-text">
+              {source}
             </span>
-            <span className="mt-1 block text-xs text-text-2">Fuente: {result.source}</span>
-            {url && <span className="mt-2 block truncate text-[11px] text-brand-ink">{url}</span>}
-          </>
+            <span className="mt-2.5 block break-words text-sm font-semibold leading-5 text-foreground group-hover:text-brand-text">
+              {main}
+            </span>
+            {details && <span className="mt-0.5 block break-words text-xs leading-5 text-text-2">{details}</span>}
+            {url && (
+              <span className="mt-auto flex items-center justify-between gap-2 pt-3">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-ink">
+                  Ver inmueble <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                </span>
+                <span className="max-w-[45%] truncate text-[10px] text-text-3">{host}</span>
+              </span>
+            )}
+          </div>
         );
         return (
-          <li key={`${result.title}:${index}`}>
+          <li key={`${result.title}:${index}`} className="min-w-0">
             {url ? (
               <a
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`group ${className} transition-colors hover:border-brand-soft hover:bg-brand-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+                aria-label={`Ver inmueble: ${result.title}`}
+                className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {content}
               </a>
             ) : (
-              <div className={className}>{content}</div>
+              <div>{content}</div>
             )}
           </li>
         );

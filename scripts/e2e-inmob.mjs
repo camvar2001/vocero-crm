@@ -159,6 +159,11 @@ const server = createServer(async (req, res) => {
         return;
       }
       chat.turns.push(baseTurn);
+      if (body.message === "respuesta pendiente") {
+        json(res, 202, { chatId: chat.chatId, agent, turn: baseTurn });
+        setTimeout(() => Object.assign(baseTurn, { status: "completed", reply: "Respuesta recuperada automáticamente" }), 600);
+        return;
+      }
       if (body.message === "consulta lenta") {
         await new Promise((resolveWait) => setTimeout(resolveWait, 600));
         Object.assign(baseTurn, { status: "completed", reply: `Respuesta de ${agent}` });
@@ -278,15 +283,12 @@ try {
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("fallo conocido");
   await page.getByRole("button", { name: "Enviar" }).click();
-  await page.getByRole("alert").filter({ hasText: /no está listo|conservado/i }).first().waitFor();
-  ok("un rechazo conocido muestra error recuperable y conserva el texto", (await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue()) === "fallo conocido");
-  ok("el rechazo requiere consultar el estado antes de habilitar otro POST", await page.getByRole("button", { name: "Enviar" }).isDisabled());
+  await page.getByText("El servidor no guardó este mensaje", { exact: false }).waitFor();
+  ok("un rechazo se recupera automáticamente y conserva el texto", (await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue()) === "fallo conocido" && posts.filter((post) => post.message === "fallo conocido").length === 1);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByText("El servidor no guardó este mensaje", { exact: false }).waitFor();
   ok("el borrador rechazado sobrevive a una recarga", (await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue()) === "fallo conocido" && posts.filter((post) => post.message === "fallo conocido").length === 1);
-  await page.getByRole("button", { name: "Consultar estado" }).click();
-  await page.getByText("El servidor no guardó este mensaje", { exact: false }).waitFor();
-  ok("GET confirma que el rechazo no se persistió y restaura el borrador", (await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue()) === "fallo conocido" && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+  ok("GET automático habilita el reintento explícito sin otro POST", !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
   await page.getByRole("button", { name: "Enviar" }).click();
   await page.getByText("Respuesta de secretaria", { exact: true }).last().waitFor();
   const rejectedPosts = posts.filter((post) => post.message === "fallo conocido");
@@ -294,23 +296,19 @@ try {
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida completada");
   await page.getByRole("button", { name: "Enviar" }).click();
-  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
-  await page.getByRole("button", { name: "Consultar estado" }).click();
   const reconciledReply = page.getByText("Resultado reconciliado", { exact: true });
   await reconciledReply.first().waitFor();
   const completedLossPosts = posts.filter((post) => post.message === "respuesta perdida completada");
   const completedLossRows = chats.get("secretaria").turns.filter((turn) => turn.message === "respuesta perdida completada");
   const composerAfterCompletedRecovery = page.getByRole("textbox", { name: "Mensaje para Secretaria" });
-  const uncertaintyAlertCount = await page.getByRole("alert").filter({ hasText: /No pudimos confirmar/ }).count();
+  const uncertaintyAlertCount = await page.getByRole("alert").filter({ hasText: /No recibimos/ }).count();
   ok("la respuesta reconciliada se muestra una sola vez", await reconciledReply.count() === 1, `renderizadas=${await reconciledReply.count()}`);
   ok("el requestId de respuesta perdida produce un POST y una sola fila persistida", completedLossPosts.length === 1 && completedLossRows.length === 1, `POST=${completedLossPosts.length}, filas=${completedLossRows.length}`);
   ok("GET reemplaza la incertidumbre local con la respuesta completada del servidor", uncertaintyAlertCount === 0 && !(await composerAfterCompletedRecovery.isDisabled()), `alertas=${uncertaintyAlertCount}, composerDisabled=${await composerAfterCompletedRecovery.isDisabled()}, enviarDisabled=${await page.getByRole("button", { name: "Enviar" }).isDisabled()}`);
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida sin turno");
   await page.getByRole("button", { name: "Enviar" }).click();
-  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
   const absentPost = posts.filter((post) => post.message === "respuesta perdida sin turno");
-  await page.getByRole("button", { name: "Consultar estado" }).click();
   await page.getByText("El servidor no guardó este mensaje", { exact: false }).waitFor();
   const absentComposer = page.getByRole("textbox", { name: "Mensaje para Secretaria" });
   const restoredDraft = await absentComposer.inputValue();
@@ -324,12 +322,10 @@ try {
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida");
   await page.getByRole("button", { name: "Enviar" }).click();
-  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
+  await page.getByRole("alert").filter({ hasText: /No recibimos/ }).first().waitFor();
   const uncertainPosts = posts.filter((post) => post.message === "respuesta perdida").length;
-  await page.getByRole("button", { name: /Consultar estado|Actualizar estado/ }).click();
-  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
+  await page.getByRole("alert").filter({ hasText: /No recibimos/ }).first().waitFor();
   ok("la respuesta incierta permanece visible sin reenviar", uncertainPosts === 1 && posts.filter((post) => post.message === "respuesta perdida").length === 1);
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("otra consulta después de revisar");
   ok("una incertidumbre permite conversar sin reconocimiento manual", !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
@@ -351,6 +347,22 @@ try {
   await recoveredTab.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("nueva consulta desde otra pestaña");
   ok("incertidumbre histórica no bloquea nuevas consultas en una pestaña nueva", !(await recoveredTab.getByRole("button", { name: "Enviar" }).isDisabled()));
   await recoveredTab.close();
+
+  await page.getByRole("button", { name: "Buscador" }).click();
+  await page.getByRole("textbox", { name: "Mensaje para Buscador" }).fill("respuesta perdida");
+  await page.getByRole("button", { name: "Enviar" }).click();
+  await page.getByRole("alert").filter({ hasText: /No recibimos/ }).first().waitFor();
+  await page.getByRole("textbox", { name: "Mensaje para Buscador" }).fill("respuesta perdida");
+  ok("Buscador permite repetir una búsqueda read-only sin bloqueo", !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+  await page.getByRole("button", { name: "Enviar" }).click();
+  await page.getByRole("textbox", { name: "Mensaje para Buscador" }).fill("borrador después de repetir búsqueda");
+  const repeatedSearches = posts.filter((post) => post.agent === "buscador" && post.message === "respuesta perdida");
+  ok("solo el usuario repite la búsqueda con UUID nuevo, nunca automáticamente", repeatedSearches.length === 2 && repeatedSearches[0].requestId !== repeatedSearches[1].requestId);
+  await page.getByRole("button", { name: "Secretaria" }).click();
+  await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta pendiente");
+  await page.getByRole("button", { name: "Enviar" }).click();
+  await page.getByText("Respuesta recuperada automáticamente", { exact: true }).waitFor({ timeout: 10000 });
+  ok("respuesta pendiente se recupera con GET automático sin duplicar POST", posts.filter((post) => post.message === "respuesta pendiente").length === 1);
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("contenido no confiable");
   await page.getByRole("button", { name: "Enviar" }).click();

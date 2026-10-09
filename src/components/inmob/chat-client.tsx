@@ -43,22 +43,6 @@ function draftStorageKey(chatId: string) {
   return `vocero:inmob:draft:${chatId}`;
 }
 
-function readAcknowledgement(chatId: string): string | null {
-  try {
-    return window.sessionStorage.getItem(`vocero:inmob:acknowledged:${chatId}`);
-  } catch {
-    return null;
-  }
-}
-
-function writeAcknowledgement(chatId: string, requestId: string) {
-  try {
-    window.sessionStorage.setItem(`vocero:inmob:acknowledged:${chatId}`, requestId);
-  } catch {
-    // El reconocimiento en memoria sigue disponible durante esta visita.
-  }
-}
-
 function readRecovery(chatId: string): RecoveryDraft | null {
   try {
     const raw = window.sessionStorage.getItem(storageKey(chatId));
@@ -231,9 +215,9 @@ function friendlyError(code: string | null): string {
     case "action_uncertain":
     case "network_uncertain":
     case "uncertain":
-      return "No pudimos confirmar si la solicitud terminó. Actualiza el estado antes de repetir una acción parecida.";
+      return "No recibimos la respuesta del agente. Puedes seguir conversando.";
     case "chat_busy":
-      return "Este chat todavía está procesando otra solicitud. Actualiza el estado en un momento.";
+      return "El agente todavía está respondiendo. La conversación se actualizará automáticamente.";
     case "configuration":
       return "El chat no está listo para responder. Tu mensaje quedó conservado.";
     default:
@@ -241,15 +225,7 @@ function friendlyError(code: string | null): string {
   }
 }
 
-function TurnStatus({
-  turn,
-  onContinue,
-  acknowledged = false,
-}: {
-  turn: InmobTurn;
-  onContinue?: () => void;
-  acknowledged?: boolean;
-}) {
+function TurnStatus({ turn, agent }: { turn: InmobTurn; agent: InmobAgent }) {
   if (turn.status === "running") {
     return (
       <p role="status" aria-live="polite" className="mt-2 flex items-center gap-1.5 text-xs text-text-2">
@@ -264,13 +240,8 @@ function TurnStatus({
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         <div>
           <p>{friendlyError(turn.errorCode)}</p>
-          {onContinue && !acknowledged && (
-            <Button type="button" size="sm" variant="outline" className="mt-2" onClick={onContinue}>
-              Continuar con otra consulta
-            </Button>
-          )}
-          {onContinue && acknowledged && (
-            <p className="mt-2 font-medium">Puedes continuar, pero no vuelvas a enviar esta solicitud.</p>
+          {agent === "secretaria" && (
+            <p>Antes de repetir una cita o un alta de cliente, revisa si ya se guardó.</p>
           )}
         </div>
       </div>
@@ -348,8 +319,6 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<RecoveryDraft | null>(null);
-  const [persistedUncertainId, setPersistedUncertainId] = useState<string | null>(null);
-  const [acknowledgedUncertainId, setAcknowledgedUncertainId] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const sequence = useRef(0);
   const lifecycle = useRef(0);
@@ -373,10 +342,6 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
       const savedTurn = saved
         ? serverTurns.find((turn) => turn.requestId === saved.requestId) ?? null
         : null;
-      // Una solicitud posterior demuestra que ya se continuó tras el aviso.
-      // Conservamos el estado incierto y la prohibición de reenviar su texto.
-      const latestTurn = serverTurns.at(-1);
-      const latestUncertain = latestTurn?.status === "uncertain" ? latestTurn : undefined;
       setChat(body);
       setTurns((current) => {
         const byId = new Map(serverTurns.map((turn) => [turn.requestId, turn]));
@@ -399,8 +364,6 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         }
         return uniqueTurns(combined).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       });
-      setPersistedUncertainId(latestUncertain?.requestId ?? null);
-      setAcknowledgedUncertainId((current) => readAcknowledgement(body.chatId) ?? current);
       if (saved && savedTurn) {
         if (savedTurn.status === "running") {
           const pending = { ...saved, state: "pending" as const };
@@ -453,26 +416,39 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   }, [turns, submitting]);
 
   const hasRunning = turns.some((turn) => turn.status === "running");
-  const recoveryBlocksSend = Boolean(recovery && recovery.state !== "not_persisted");
-  const needsAcknowledgement = Boolean(
-    persistedUncertainId && acknowledgedUncertainId !== persistedUncertainId
-  );
-  const repeatsUncertain = turns.some(
+  const recoveryBlocksSend = Boolean(recovery && (recovery.state === "pending" || recovery.state === "rejected"));
+  const repeatsUncertain = agent === "secretaria" && turns.some(
     (turn) => turn.status === "uncertain" && turn.message === draft.trim()
   );
-  const canSend = Boolean(draft.trim()) && draft.length <= 4000 && !loading && !submitting && !hasRunning && !recoveryBlocksSend && !needsAcknowledgement && !repeatsUncertain && Boolean(chat);
+  const canSend = Boolean(draft.trim()) && draft.length <= 4000 && !loading && !submitting && !hasRunning && !recoveryBlocksSend && !repeatsUncertain && Boolean(chat);
   const needsRefresh = hasRunning || turns.some((turn) => turn.status === "uncertain") || Boolean(recovery);
+
+  const recoveryNeedsRefresh = Boolean(recovery && recovery.state !== "not_persisted");
+
+  // Recuperación de lectura solamente: nunca repetir un POST perdido.
+  useEffect(() => {
+    if (submitting || (!hasRunning && !recoveryNeedsRefresh)) return;
+    let inFlight = false;
+    const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      await readHistory(false);
+      inFlight = false;
+    };
+    void refresh();
+    const timer = hasRunning ? window.setInterval(() => void refresh(), 3000) : null;
+    return () => { if (timer !== null) window.clearInterval(timer); };
+  }, [submitting, hasRunning, recoveryNeedsRefresh, readHistory]);
 
   async function submit(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     const message = draft.trim();
     if (
       !chat || !message || message.length > 4000 || submittingRef.current || hasRunning ||
-      (recovery && recovery.state !== "not_persisted") ||
-      (persistedUncertainId && acknowledgedUncertainId !== persistedUncertainId)
+      recoveryBlocksSend
     ) return;
-    if (turns.some((turn) => turn.status === "uncertain" && turn.message === message)) {
-      setRequestError("Esta solicitud sigue incierta. No la vuelvas a enviar; consulta el estado antes de continuar.");
+    if (agent === "secretaria" && turns.some((turn) => turn.status === "uncertain" && turn.message === message)) {
+      setRequestError("No recibimos la confirmación de esta acción. Revisa el calendario o los clientes antes de repetirla; puedes enviar otra consulta.");
       return;
     }
 
@@ -546,7 +522,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         setRecovery(rejected);
         setTurns((current) => current.filter((turn) => turn.requestId !== pending.requestId));
         setDraft(message);
-        setRequestError(`${friendlyError(code)} Consulta el estado antes de volver a enviarlo.`);
+        setRequestError(`${friendlyError(code)} Estamos recuperando la conversación automáticamente.`);
         return;
       }
 
@@ -572,13 +548,6 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         setSubmitting(false);
       }
     }
-  }
-
-  function acknowledgeUncertainty() {
-    if (!chat || !persistedUncertainId) return;
-    writeAcknowledgement(chat.chatId, persistedUncertainId);
-    setAcknowledgedUncertainId(persistedUncertainId);
-    setRequestError(null);
   }
 
   function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -621,7 +590,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
                 disabled={refreshing || submitting}
                 onClick={() => void readHistory(false)}
               >
-                {refreshing ? "Consultando…" : "Consultar estado"}
+                {refreshing ? "Consultando…" : "Actualizar conversación"}
               </Button>
             )}
           </div>
@@ -671,15 +640,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
                           <p className="text-text-2">No hay resultados para mostrar en esta respuesta.</p>
                         )}
                       </div>
-                      <TurnStatus
-                        turn={turn}
-                        onContinue={
-                          turn.requestId === persistedUncertainId
-                            ? acknowledgeUncertainty
-                            : undefined
-                        }
-                        acknowledged={turn.requestId === acknowledgedUncertainId}
-                      />
+                      <TurnStatus turn={turn} agent={agent} />
                     </div>
                   )}
                   {turn.status === "running" && !turn.reply && turn.results.length === 0 && (
@@ -690,15 +651,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
                         <span className="sr-only">{copy.title} está preparando una respuesta</span>
                         <span aria-hidden="true">Un momento…</span>
                       </div>
-                      <TurnStatus
-                        turn={turn}
-                        onContinue={
-                          turn.requestId === persistedUncertainId
-                            ? acknowledgeUncertainty
-                            : undefined
-                        }
-                        acknowledged={turn.requestId === acknowledgedUncertainId}
-                      />
+                      <TurnStatus turn={turn} agent={agent} />
                     </div>
                   )}
                 </li>
@@ -711,16 +664,8 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
 
       <footer className="shrink-0 border-t border-border bg-background px-3 py-3 sm:px-6 sm:py-4">
         <div className="mx-auto max-w-4xl">
-          {needsAcknowledgement && (
-            <div role="alert" className="mb-2 rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs leading-5 text-warning-text">
-              <p>La última solicitud sigue sin confirmar. Puedes continuar con otra consulta sin repetirla.</p>
-              <Button type="button" size="sm" variant="outline" className="mt-2" onClick={acknowledgeUncertainty}>
-                Continuar con otra consulta
-              </Button>
-            </div>
-          )}
-          {repeatsUncertain && !needsAcknowledgement && (
-            <p role="alert" className="mb-2 text-xs leading-5 text-warning-text">Esta solicitud sigue sin confirmar. Consulta el estado o escribe una consulta diferente.</p>
+          {repeatsUncertain && (
+            <p role="alert" className="mb-2 text-xs leading-5 text-warning-text">No recibimos la confirmación de esta acción. Revisa si ya se guardó o escribe otra consulta.</p>
           )}
           {requestError && <p role="alert" className="mb-2 text-xs leading-5 text-danger-text">{requestError}</p>}
           <form
@@ -748,7 +693,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
               rows={2}
               disabled={
                 !chat || loading || submitting || hasRunning ||
-                Boolean(recovery && recovery.state !== "not_persisted")
+                Boolean(recovery && (recovery.state === "pending" || recovery.state === "rejected"))
               }
               className="min-h-[58px] resize-y border-0 bg-transparent px-2 py-1 shadow-none focus-visible:border-transparent focus-visible:ring-0"
             />

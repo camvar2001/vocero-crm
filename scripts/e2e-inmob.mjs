@@ -253,7 +253,7 @@ try {
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("fallo conocido");
   await page.getByRole("button", { name: "Enviar" }).click();
-  await page.getByRole("alert").filter({ hasText: /No se pudo|falló|intenta/i }).first().waitFor();
+  await page.getByRole("alert").filter({ hasText: /no está listo|conservado/i }).first().waitFor();
   ok("un rechazo conocido muestra error recuperable y conserva el texto", (await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue()) === "fallo conocido");
   ok("el rechazo requiere consultar el estado antes de habilitar otro POST", await page.getByRole("button", { name: "Enviar" }).isDisabled());
   await page.reload({ waitUntil: "domcontentloaded" });

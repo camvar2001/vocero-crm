@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { InmobGatewayResponse } from "@/lib/inmob";
+import type { InmobGatewayRequest, InmobGatewayResponse } from "@/lib/inmob";
+import type { GatewayOptions } from "@/server/inmob/client";
+import type { InmobRepository, TurnRecord } from "@/server/inmob/service";
+
+type Gateway = (payload: InmobGatewayRequest, options?: GatewayOptions) => Promise<InmobGatewayResponse>;
 
 const input = {
   organizationId: "org_primary",
@@ -9,20 +13,38 @@ const input = {
   message: "Casa de dos dormitorios",
 };
 
-function fakeRepository(overrides: Record<string, unknown> = {}) {
+function fakeRepository(overrides: Partial<InmobRepository> = {}): InmobRepository {
   return {
-    findTurn: vi.fn(async () => null),
-    claimTurn: vi.fn(async () => ({ kind: "claimed", chatId: "iwc_1", turnId: "iwt_1" })),
+    findTurn: vi.fn<InmobRepository["findTurn"]>(async () => null),
+    claimTurn: vi.fn<InmobRepository["claimTurn"]>(async () => ({ kind: "claimed", chatId: "iwc_1", turnId: "iwt_1" })),
     listHistory: vi.fn(async () => []),
     completeTurn: vi.fn(async () => undefined),
     failTurn: vi.fn(async () => undefined),
     markTurnUncertain: vi.fn(async () => undefined),
-    claimToolAction: vi.fn(async () => ({ kind: "claimed", actionId: "ita_1" })),
+    claimToolAction: vi.fn<InmobRepository["claimToolAction"]>(async () => ({ kind: "claimed", actionId: "ita_1" })),
     finishToolAction: vi.fn(async () => undefined),
     markToolActionUncertain: vi.fn(async () => undefined),
-    expireRunningTurns: vi.fn(async () => 0),
-    getChat: vi.fn(async () => ({ id: "iwc_1", agent: "buscador" as const })),
-    readChat: vi.fn(async () => ({ chatId: "iwc_1", agent: "buscador", turns: [] })),
+    expireRunningTurns: vi.fn<InmobRepository["expireRunningTurns"]>(async () => 0),
+    getChat: vi.fn<InmobRepository["getChat"]>(async () => ({ id: "iwc_1", agent: "buscador" })),
+    readChat: vi.fn<InmobRepository["readChat"]>(async () => ({ chatId: "iwc_1", agent: "buscador", turns: [] })),
+    ...overrides,
+  };
+}
+
+function storedTurn(overrides: Partial<TurnRecord> = {}): TurnRecord {
+  return {
+    id: "iwt_1",
+    chatId: "iwc_1",
+    organizationId: input.organizationId,
+    userId: input.userId,
+    requestId: input.requestId,
+    message: input.message,
+    reply: null,
+    results: [],
+    status: "completed",
+    errorCode: null,
+    createdAt: new Date("2026-10-08T11:00:00.000Z"),
+    agent: "buscador",
     ...overrides,
   };
 }
@@ -39,9 +61,9 @@ const gatewayReply: InmobGatewayResponse = {
 describe("INMOB service claims, replay safety, and recovery", () => {
   it("rejects a reused requestId with different text without another gateway POST", async () => {
     const repository = fakeRepository({
-      findTurn: vi.fn(async () => ({ ...input, status: "completed" })),
+      findTurn: vi.fn<InmobRepository["findTurn"]>(async () => storedTurn()),
     });
-    const gateway = vi.fn(async () => gatewayReply);
+    const gateway = vi.fn<Gateway>(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
@@ -54,9 +76,9 @@ describe("INMOB service claims, replay safety, and recovery", () => {
   });
 
   it("returns an identical completed requestId from storage without replaying the gateway action", async () => {
-    const stored = { ...input, reply: "Ya procesado", status: "completed", results: [] };
-    const repository = fakeRepository({ findTurn: vi.fn(async () => stored) });
-    const gateway = vi.fn(async () => gatewayReply);
+    const stored = storedTurn({ reply: "Ya procesado" });
+    const repository = fakeRepository({ findTurn: vi.fn<InmobRepository["findTurn"]>(async () => stored) });
+    const gateway = vi.fn<Gateway>(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
@@ -69,8 +91,8 @@ describe("INMOB service claims, replay safety, and recovery", () => {
   });
 
   it("does not send to the gateway when another request owns the chat claim", async () => {
-    const repository = fakeRepository({ claimTurn: vi.fn(async () => ({ kind: "chat_busy" })) });
-    const gateway = vi.fn(async () => gatewayReply);
+    const repository = fakeRepository({ claimTurn: vi.fn<InmobRepository["claimTurn"]>(async () => ({ kind: "chat_busy" })) });
+    const gateway = vi.fn<Gateway>(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
@@ -83,12 +105,12 @@ describe("INMOB service claims, replay safety, and recovery", () => {
 
   it("allows only one gateway call when two different requests race for one chat", async () => {
     let running = false;
-    const repository = fakeRepository({ claimTurn: vi.fn(async () => {
+    const repository = fakeRepository({ claimTurn: vi.fn<InmobRepository["claimTurn"]>(async () => {
       if (running) return { kind: "chat_busy" };
       running = true;
       return { kind: "claimed", chatId: "iwc_1", turnId: "iwt_1" };
     }) });
-    const gateway = vi.fn(async () => gatewayReply);
+    const gateway = vi.fn<Gateway>(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
@@ -104,13 +126,13 @@ describe("INMOB service claims, replay safety, and recovery", () => {
   it("claims durably before the gateway call and persists the completed reply", async () => {
     const events: string[] = [];
     const repository = fakeRepository({
-      claimTurn: vi.fn(async () => {
+      claimTurn: vi.fn<InmobRepository["claimTurn"]>(async () => {
         events.push("claim");
         return { kind: "claimed", chatId: "iwc_1", turnId: "iwt_1" };
       }),
       completeTurn: vi.fn(async () => { events.push("complete"); }),
     });
-    const gateway = vi.fn(async () => { events.push("gateway"); return gatewayReply; });
+    const gateway = vi.fn<Gateway>(async () => { events.push("gateway"); return gatewayReply; });
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
@@ -127,7 +149,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
 
   it("marks a lost gateway outcome uncertain and never retries the POST", async () => {
     const repository = fakeRepository();
-    const gateway = vi.fn(async () => { throw new Error("gateway timeout"); });
+    const gateway = vi.fn<Gateway>(async () => { throw new Error("gateway timeout"); });
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
@@ -157,7 +179,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
       reply: "Tengo dos horarios disponibles.",
     } as const satisfies InmobGatewayResponse;
     const repository = fakeRepository();
-    const gateway = vi.fn()
+    const gateway = vi.fn<Gateway>()
       .mockResolvedValueOnce(toolRequest)
       .mockResolvedValueOnce(finalReply);
     const executeTool = vi.fn(async () => ({ ok: true, result: { slots: [{ startUtc: "2026-10-09T15:00:00.000Z" }] } }));
@@ -188,9 +210,9 @@ describe("INMOB service claims, replay safety, and recovery", () => {
       tool: { name: "agenda_cancel", arguments: { bookingId: "bk_other" } },
     } as const satisfies InmobGatewayResponse;
     const repository = fakeRepository({
-      claimToolAction: vi.fn(async () => ({ kind: "conflict" })),
+      claimToolAction: vi.fn<InmobRepository["claimToolAction"]>(async () => ({ kind: "conflict" })),
     });
-    const gateway = vi.fn(async () => toolRequest);
+    const gateway = vi.fn<Gateway>(async () => toolRequest);
     const executeTool = vi.fn(async () => ({ ok: true, result: {} }));
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool, identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
@@ -214,7 +236,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
       tool: { name: "agenda_create", arguments: { contactId: "ct_1", startUtc: "2026-10-09T15:00:00.000Z" } },
     } as const satisfies InmobGatewayResponse;
     const repository = fakeRepository();
-    const gateway = vi.fn(async () => toolRequest);
+    const gateway = vi.fn<Gateway>(async () => toolRequest);
     const executeTool = vi.fn(async () => ({ ok: false, uncertain: true, result: { error: "No se pudo confirmar" } }));
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool, identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
@@ -229,8 +251,8 @@ describe("INMOB service claims, replay safety, and recovery", () => {
   });
 
   it("turns expired running work into uncertain through an atomic running-only transition", async () => {
-    const repository = fakeRepository({ expireRunningTurns: vi.fn(async (cutoff: Date) => {
-      expect(cutoff.toISOString()).toBe("2026-10-08T11:59:10.000Z");
+    const repository = fakeRepository({ expireRunningTurns: vi.fn<InmobRepository["expireRunningTurns"]>(async ({ before }) => {
+      expect(before.toISOString()).toBe("2026-10-08T11:59:10.000Z");
       return 1;
     }) });
     const now = () => new Date("2026-10-08T12:00:00.000Z");
@@ -245,13 +267,13 @@ describe("INMOB service claims, replay safety, and recovery", () => {
 
   it("does not let expiry move a terminal turn back to uncertain", async () => {
     const repository = fakeRepository({
-      expireRunningTurns: vi.fn(async () => 0),
-      readChat: vi.fn(async () => ({
+      expireRunningTurns: vi.fn<InmobRepository["expireRunningTurns"]>(async () => 0),
+      readChat: vi.fn<InmobRepository["readChat"]>(async () => ({
         chatId: "iwc_1",
         agent: "buscador",
         turns: [
-          { requestId: input.requestId, message: input.message, reply: "ok", status: "completed", errorCode: null, results: [], createdAt: "2026-10-08T11:00:00.000Z" },
-          { requestId: "b2b2b2b2-b2b2-42b2-82b2-b2b2b2b2b2b2", message: "otra", reply: null, status: "uncertain", errorCode: "timeout", results: [], createdAt: "2026-10-08T11:00:00.000Z" },
+          { requestId: input.requestId, message: input.message, reply: "ok", status: "completed" as const, errorCode: null, results: [], createdAt: "2026-10-08T11:00:00.000Z" },
+          { requestId: "b2b2b2b2-b2b2-42b2-82b2-b2b2b2b2b2b2", message: "otra", reply: null, status: "uncertain" as const, errorCode: "timeout", results: [], createdAt: "2026-10-08T11:00:00.000Z" },
         ],
       })),
     });
@@ -270,7 +292,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
       reply: `${index}:` + "a".repeat(795),
     }));
     const repository = fakeRepository({ listHistory: vi.fn(async () => history) });
-    const gateway = vi.fn(async () => gatewayReply);
+    const gateway = vi.fn<Gateway>(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date("2026-10-08T12:00:00.000Z") });
 
@@ -286,7 +308,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     const repository = fakeRepository({
       getChat: vi.fn(() => new Promise<{ id: string; agent: "buscador" }>(() => undefined)),
     });
-    const gateway = vi.fn(async () => gatewayReply);
+    const gateway = vi.fn<Gateway>(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date(), turnTimeoutMs: 80 });
     const startedAt = Date.now();
@@ -303,7 +325,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     const repository = fakeRepository({
       listHistory: vi.fn(() => new Promise<Array<{ message: string; reply: string }>>(() => undefined)),
     });
-    const gateway = vi.fn(async () => gatewayReply);
+    const gateway = vi.fn<Gateway>(async () => gatewayReply);
     const { createInmobService } = await import("@/server/inmob/service");
     const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date(), turnTimeoutMs: 80 });
     const startedAt = Date.now();
@@ -331,7 +353,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     const toolStarted = new Promise<void>((resolve) => { markToolStarted = resolve; });
     const delayedTool = new Promise<{ ok: true; result: { contactId: string } }>((resolve) => { releaseTool = resolve; });
     const repository = fakeRepository();
-    const gateway = vi.fn(async () => toolRequest);
+    const gateway = vi.fn<Gateway>(async () => toolRequest);
     const executeTool = vi.fn(() => {
       markToolStarted();
       return delayedTool;

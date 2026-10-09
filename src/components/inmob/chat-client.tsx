@@ -116,6 +116,7 @@ function mergeTurn(turns: InmobTurn[], next: InmobTurn, authoritative = false): 
   // El historial persistido puede llegar después de una respuesta rápida del
   // POST. Un estado final nunca retrocede a running.
   const previous = merged[index];
+  if (!previous) return [...turns, next];
   merged[index] = authoritative || previous.status === "running" ? next : previous;
   return merged;
 }
@@ -274,7 +275,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   const submittingRef = useRef(false);
   const sequence = useRef(0);
   const lifecycle = useRef(0);
-  const endRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLLIElement>(null);
 
   const readHistory = useCallback(async (initial = false) => {
     const lifecycleId = lifecycle.current;

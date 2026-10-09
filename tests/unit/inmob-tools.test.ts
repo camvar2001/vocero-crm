@@ -95,6 +95,7 @@ describe("dispatcher nativo de Secretaria", () => {
 
   it("crea una cita para el contacto validado en la organización y sin oferta conversacional", async () => {
     const { executeSecretariaTool } = await import("@/server/inmob/tools");
+    const deadline = globalThis.performance.now() + 30_000;
 
     await executeSecretariaTool("org_a", {
       name: "agenda_create",
@@ -103,7 +104,7 @@ describe("dispatcher nativo de Secretaria", () => {
         startUtc: "2026-10-14T13:00:00.000Z",
         notes: "Visita de prueba",
       },
-    }, undefined, { deadline: 123 });
+    }, undefined, { deadline });
 
     expect(getContactById).toHaveBeenCalledWith("org_a", "ct_owned");
     expect(createSessionBooking).toHaveBeenCalledWith(expect.objectContaining({
@@ -114,7 +115,7 @@ describe("dispatcher nativo de Secretaria", () => {
       delivery: "local-only",
       advanceLead: false,
       notes: "Visita de prueba",
-      deadline: 123,
+      deadline,
     }));
   });
 

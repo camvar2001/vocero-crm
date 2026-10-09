@@ -1,0 +1,114 @@
+name: Inmob pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        type: choice
+        options: [verify, red]
+        default: verify
+  push:
+    branches: [codex/century-agentes-web]
+
+concurrency:
+  group: inmob-pilot-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  red:
+    if: github.event_name == 'workflow_dispatch' && inputs.phase == 'red'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Existing baseline tests
+        run: pnpm exec vitest run --exclude "tests/unit/inmob*.test.ts"
+      - name: Feature red tests
+        run: pnpm exec vitest run tests/unit/inmob
+
+  verify:
+    if: github.event_name != 'workflow_dispatch' || inputs.phase != 'red'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - inmob: ""
+            agenda: ""
+            channels: ""
+          - inmob: "on"
+            agenda: "on"
+            channels: "whatsapp,instagram,messenger,telegram"
+    env:
+      CHANNELS: ${{ matrix.config.channels }}
+      INMOB: ${{ matrix.config.inmob }}
+      AGENDA: ${{ matrix.config.agenda }}
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+        if: ${{ !cancelled() }}
+      - run: pnpm test
+        if: ${{ !cancelled() }}
+      - run: pnpm build
+        if: ${{ !cancelled() }}
+      - name: Inmob browser behavior (mock gateway/local DB)
+        if: ${{ matrix.config.inmob == 'on' && !cancelled() }}
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node scripts/e2e-inmob.mjs
+
+  image:
+    if: (github.event_name != 'workflow_dispatch' || inputs.phase != 'red') && github.repository == 'camvar2001/vocero-crm' && github.ref == 'refs/heads/codex/century-agentes-web'
+    permissions:
+      contents: read
+      packages: write
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        id: image
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:inmob-${{ github.sha }}
+          build-args: |
+            SOURCE_COMMIT=${{ github.sha }}
+          cache-from: type=gha,scope=inmob-pilot
+          cache-to: type=gha,mode=max,scope=inmob-pilot
+          outputs: type=docker,dest=/tmp/vocero-inmob-image.tar
+      - name: Archive image for local pilot
+        run: gzip -1 /tmp/vocero-inmob-image.tar
+      - uses: actions/upload-artifact@v7
+        with:
+          name: inmob-pilot-image
+          path: /tmp/vocero-inmob-image.tar.gz
+          compression-level: 0
+          retention-days: 3
+      - name: Digest
+        run: echo "digest=${{ steps.image.outputs.digest }}"

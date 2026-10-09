@@ -11,6 +11,8 @@ import {
   Inbox,
   Kanban,
   LogOut,
+  MessageCircle,
+  Search,
   Settings,
   Sparkles,
   Users,
@@ -56,6 +58,11 @@ const AGENDA_ITEM: NavItem = {
   icon: CalendarDays,
 };
 
+const INMOB_ITEMS: NavItem[] = [
+  { href: "/inmob/buscador", label: "Buscador", icon: Search },
+  { href: "/inmob/secretaria", label: "Secretaria", icon: MessageCircle },
+];
+
 /**
  * Un renglón del menú, como el `side-item` del mockup de la landing: texto
  * semibold, esquinas de 9px y, activo, lavado del acento con tinta azul.
@@ -80,6 +87,7 @@ export function AppNav({
   theme,
   commit,
   agenda = false,
+  inmob = false,
   open = false,
   onClose,
 }: {
@@ -99,6 +107,8 @@ export function AppNav({
    * todavía debe ver la entrada igual.
    */
   agenda?: boolean;
+  /** El servidor lo activa solo para el propietario permitido de INMOB. */
+  inmob?: boolean;
   /** Solo aplica por debajo de `lg`: en escritorio el lateral es fijo. */
   open?: boolean;
   onClose?: () => void;
@@ -129,9 +139,14 @@ export function AppNav({
   const settingsActive = pathname.startsWith("/settings");
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
-  const items = agenda
-    ? [...NAV.slice(0, 2), AGENDA_ITEM, ...NAV.slice(2)]
-    : NAV;
+  const items = [
+    ...NAV.slice(0, 2),
+    ...(agenda
+      ? [{ ...AGENDA_ITEM, label: inmob ? "Calendario" : AGENDA_ITEM.label }]
+      : []),
+    ...(inmob ? INMOB_ITEMS : []),
+    ...NAV.slice(2),
+  ];
 
   return (
     <aside

@@ -191,7 +191,7 @@ try {
   await page.getByRole("status").filter({ hasText: /Cargando/ }).waitFor();
   ok("la carga inicial se anuncia con estado accesible", true);
   await page.getByRole("heading", { name: "Buscador" }).waitFor();
-  await page.getByText("Historial independiente de tus conversaciones", { exact: false }).waitFor();
+  await page.getByText("Historial de Buscador", { exact: true }).waitFor();
 
   const composer = page.getByRole("textbox", { name: "Mensaje para Buscador" });
   await composer.fill("consulta con Enter");
@@ -219,12 +219,13 @@ try {
   await page.getByRole("button", { name: "Enviar" }).click();
   await page.getByRole("status").filter({ hasText: /Enviando|procesando/i }).waitFor();
   ok("el envío pendiente se anuncia y bloquea envíos duplicados", await page.getByRole("button", { name: "Enviar" }).isDisabled());
-  await page.getByText("Respuesta de buscador", { exact: true }).last().waitFor();
-  const slowCount = posts.filter((post) => post.message === "consulta lenta").length;
   await page.getByRole("button", { name: "Secretaria" }).click();
   await page.getByRole("heading", { name: "Secretaria" }).waitFor();
-  await page.getByText("Historial de Secretaria", { exact: false }).waitFor();
-  ok("Secretaria abre historial separado del Buscador", await page.getByText("consulta con Enter", { exact: true }).count() === 0 && slowCount === 1);
+  await page.waitForTimeout(750);
+  const slowCount = posts.filter((post) => post.message === "consulta lenta").length;
+  await page.getByText("Historial de Secretaria", { exact: true }).waitFor();
+  ok("Secretaria no recibe una respuesta tardía del Buscador", await page.getByText("Respuesta de buscador", { exact: true }).count() === 0 && await page.getByText("consulta lenta", { exact: true }).count() === 0 && slowCount === 1);
+  ok("Secretaria abre historial separado del Buscador", await page.getByText("consulta con Enter", { exact: true }).count() === 0);
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("hola secretaria");
   await page.getByRole("button", { name: "Enviar" }).click();
   await page.getByText("Respuesta de secretaria", { exact: true }).waitFor();
@@ -232,16 +233,18 @@ try {
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("fallo conocido");
   await page.getByRole("button", { name: "Enviar" }).click();
-  await page.getByRole("alert").filter({ hasText: /No se pudo|falló|intenta/i }).waitFor();
+  await page.getByRole("alert").filter({ hasText: /No se pudo|falló|intenta/i }).first().waitFor();
   ok("un rechazo conocido muestra error recuperable y conserva el texto", (await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue()) === "fallo conocido");
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida");
   await page.getByRole("button", { name: "Enviar" }).click();
-  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).waitFor();
+  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
   const uncertainPosts = posts.filter((post) => post.message === "respuesta perdida").length;
   await page.getByRole("button", { name: /Consultar estado|Actualizar estado/ }).click();
-  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).waitFor();
-  ok("la respuesta perdida queda incierta y consultar estado no reenvía el POST", uncertainPosts === 1 && posts.filter((post) => post.message === "respuesta perdida").length === 1);
+  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
+  ok("la respuesta perdida queda incierta y consultar estado/recargar no reenvían el POST", uncertainPosts === 1 && posts.filter((post) => post.message === "respuesta perdida").length === 1);
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("contenido no confiable");
   await page.getByRole("button", { name: "Enviar" }).click();

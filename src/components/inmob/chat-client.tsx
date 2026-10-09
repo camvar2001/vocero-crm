@@ -109,16 +109,34 @@ function newRequestId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+function uniqueTurns(turns: InmobTurn[]): InmobTurn[] {
+  const byRequestId = new Map<string, InmobTurn>();
+  const rank: Record<InmobTurn["status"], number> = {
+    running: 0,
+    uncertain: 1,
+    failed: 2,
+    completed: 3,
+  };
+  for (const turn of turns) {
+    const previous = byRequestId.get(turn.requestId);
+    if (!previous || rank[turn.status] >= rank[previous.status]) {
+      byRequestId.set(turn.requestId, turn);
+    }
+  }
+  return [...byRequestId.values()];
+}
+
 function mergeTurn(turns: InmobTurn[], next: InmobTurn, authoritative = false): InmobTurn[] {
-  const index = turns.findIndex((turn) => turn.requestId === next.requestId);
-  if (index < 0) return [...turns, next];
-  const merged = [...turns];
+  const unique = uniqueTurns(turns);
+  const index = unique.findIndex((turn) => turn.requestId === next.requestId);
+  if (index < 0) return [...unique, next];
+  const merged = [...unique];
   // El historial persistido puede llegar después de una respuesta rápida del
   // POST. Un estado final nunca retrocede a running.
   const previous = merged[index];
-  if (!previous) return [...turns, next];
+  if (!previous) return [...unique, next];
   merged[index] = authoritative || previous.status === "running" ? next : previous;
-  return merged;
+  return uniqueTurns(merged);
 }
 
 function safeHttpUrl(value: string): string | null {
@@ -316,7 +334,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
           const absentRecovery = saved?.requestId === turn.requestId && !savedTurn;
           if (!byId.has(turn.requestId) && turn.status !== "completed" && !absentRecovery) combined.push(turn);
         }
-        return combined.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        return uniqueTurns(combined).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       });
       setPersistedUncertainId(latestUncertain?.requestId ?? null);
       if (saved && savedTurn) {

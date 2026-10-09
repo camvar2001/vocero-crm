@@ -48,6 +48,20 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+function interruptJsonAfterHeaders(res) {
+  // Chrome may retransmit a POST if the peer disappears before it receives
+  // response headers. Send an acknowledged response with an incomplete body
+  // so fetch fails while parsing, without simulating a transport-level retry.
+  res.writeHead(200, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "content-length": "256",
+  });
+  res.flushHeaders();
+  res.write('{"turn":');
+  res.socket?.destroy();
+}
+
 const harnessSource = `
   import React, { createElement as h, useState } from "react";
   import { createRoot } from "react-dom/client";
@@ -127,14 +141,21 @@ const server = createServer(async (req, res) => {
         results: [],
         createdAt,
       };
+      const existingTurn = chat.turns.find((turn) => turn.requestId === body.requestId);
+      if (existingTurn) {
+        // La API real trata requestId como clave idempotente y devuelve la
+        // fila existente sin crear otro turno ni repetir la acción.
+        json(res, 200, { chatId: chat.chatId, agent, turn: existingTurn });
+        return;
+      }
       if (body.message === "fallo conocido" && attempt === 1) {
         // El gateway confirma un rechazo antes de reclamar el turno.
         json(res, 503, { errorCode: "configuration" });
         return;
       }
       if (body.message === "respuesta perdida sin turno" && attempt === 1) {
-        // La conexión cae antes de que el servidor persista el UUID.
-        req.socket.destroy();
+        // La respuesta se interrumpe tras los headers y antes de persistir.
+        interruptJsonAfterHeaders(res);
         return;
       }
       chat.turns.push(baseTurn);
@@ -146,14 +167,14 @@ const server = createServer(async (req, res) => {
       }
       if (body.message === "respuesta perdida") {
         Object.assign(baseTurn, { status: "uncertain", errorCode: "gateway_uncertain" });
-        // Simula que el servidor registró el turno pero la respuesta no llegó.
-        req.socket.destroy();
+        // El turno queda registrado, pero el cuerpo de respuesta se trunca.
+        interruptJsonAfterHeaders(res);
         return;
       }
       if (body.message === "respuesta perdida completada") {
         Object.assign(baseTurn, { status: "completed", reply: "Resultado reconciliado" });
-        // El turno terminó en el servidor aunque el navegador pierda la respuesta.
-        req.socket.destroy();
+        // El turno terminó y el servidor alcanzó a responder headers, no el cuerpo.
+        interruptJsonAfterHeaders(res);
         return;
       }
       if (body.message === "contenido no confiable") {
@@ -273,9 +294,13 @@ try {
   await page.getByRole("button", { name: "Enviar" }).click();
   await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
   await page.getByRole("button", { name: "Consultar estado" }).click();
-  await page.getByText("Resultado reconciliado", { exact: true }).waitFor();
+  const reconciledReply = page.getByText("Resultado reconciliado", { exact: true });
+  await reconciledReply.first().waitFor();
   const completedLossPosts = posts.filter((post) => post.message === "respuesta perdida completada");
-  ok("GET reemplaza la incertidumbre local con la respuesta completada del servidor", completedLossPosts.length === 1 && !(await page.getByRole("alert").filter({ hasText: /No pudimos confirmar/ }).count()) && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+  const completedLossRows = chats.get("secretaria").turns.filter((turn) => turn.message === "respuesta perdida completada");
+  ok("la respuesta reconciliada se muestra una sola vez", await reconciledReply.count() === 1, `renderizadas=${await reconciledReply.count()}`);
+  ok("el requestId de respuesta perdida produce un POST y una sola fila persistida", completedLossPosts.length === 1 && completedLossRows.length === 1, `POST=${completedLossPosts.length}, filas=${completedLossRows.length}`);
+  ok("GET reemplaza la incertidumbre local con la respuesta completada del servidor", !(await page.getByRole("alert").filter({ hasText: /No pudimos confirmar/ }).count()) && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida sin turno");
   await page.getByRole("button", { name: "Enviar" }).click();

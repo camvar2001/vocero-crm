@@ -29,6 +29,10 @@ try {
   check(chatA.id !== chatB.id, "tenant chats are distinct");
   const secretariat = await repo.getChat({ ...a, agent: "secretaria" });
   check(secretariat.id !== chatA.id, "agents have separate chats");
+  await assert.rejects(db.insert(schema.inmobWebTurn).values({
+    id: randomUUID(), chatId: chatA.id, ...b, requestId: randomUUID(), message: "Invalid parent fixture",
+  }));
+  checks++;
 
   const requests = Array.from({ length: 16 }, () => randomUUID());
   const raced = await Promise.all(requests.map((requestId) => repo.claimTurn({ ...a, agent: "buscador", requestId, message: "Race fixture", now })));
@@ -47,6 +51,10 @@ try {
   checks++;
 
   const action = { ...a, turnId: winner.turnId, toolCallId: randomUUID(), name: "contact_create", inputHash: "fixture-hash", now };
+  await assert.rejects(db.insert(schema.inmobToolAction).values({
+    id: randomUUID(), turnId: winner.turnId, ...b, toolCallId: randomUUID(), name: "contact_create", inputHash: "invalid-parent",
+  }));
+  checks++;
   const toolRaced = await Promise.all(Array.from({ length: 12 }, () => repo.claimToolAction(action)));
   check(toolRaced.filter((r) => r.kind === "claimed").length === 1, "twelve concurrent tool requests have one effect claim");
   check(toolRaced.filter((r) => r.kind === "uncertain").length === 11, "running tool replay cannot reexecute");

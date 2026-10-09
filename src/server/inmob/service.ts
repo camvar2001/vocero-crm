@@ -86,6 +86,7 @@ type ServiceDependencies = {
   gateway: (payload: InmobGatewayRequest, options?: GatewayOptions) => Promise<InmobGatewayResponse>;
   executeTool: typeof executeSecretariaTool;
   now: () => Date;
+  monotonicNow?: () => number;
   turnTimeoutMs?: number;
   identity?: { advisorId: string; advisorPhone: string };
 };
@@ -132,6 +133,48 @@ function errorReply(statusCode: number, errorCode: string): ServiceReply {
 }
 
 class ToolActionConflictError extends Error {}
+class TurnDeadlineExceededError extends Error {}
+
+type BoundedCall<T> =
+  | { timedOut: false; value: T }
+  | { timedOut: false; error: unknown }
+  | { timedOut: true };
+
+function beforeDeadline<T>(
+  operation: () => Promise<T>,
+  deadline: number,
+  monotonicNow: () => number
+): Promise<BoundedCall<T>> {
+  const remaining = deadline - monotonicNow();
+  if (remaining <= 0) return Promise.resolve({ timedOut: true });
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const result = new Promise<BoundedCall<T>>((resolve) => {
+    timer = setTimeout(() => resolve({ timedOut: true }), remaining);
+  });
+  let pending: Promise<T>;
+  try {
+    pending = operation();
+  } catch (error) {
+    if (timer) clearTimeout(timer);
+    return Promise.resolve({ timedOut: false, error });
+  }
+  return Promise.race([
+    pending.then(
+      (value): BoundedCall<T> => ({ timedOut: false, value }),
+      (error: unknown): BoundedCall<T> => ({ timedOut: false, error })
+    ),
+    result,
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function unwrapBounded<T>(result: BoundedCall<T>): T {
+  if (result.timedOut) throw new TurnDeadlineExceededError();
+  if ("error" in result) throw result.error;
+  return result.value;
+}
 
 function trustedGatewayIdentity(input: {
   organizationId: string;
@@ -183,6 +226,8 @@ function inputHash(tool: InmobTool): string {
 
 export function createInmobService(deps: ServiceDependencies) {
   const timeoutMs = deps.turnTimeoutMs ?? TURN_TIMEOUT_MS;
+  const monotonicNow = deps.monotonicNow ?? (() => globalThis.performance.now());
+  const cleanupReserveMs = Math.min(1_000, Math.max(10, Math.floor(timeoutMs * 0.15)));
 
   async function expireChat(input: { organizationId: string; userId: string; agent: InmobAgent }) {
     const chat = await deps.repository.getChat(input);
@@ -209,6 +254,53 @@ export function createInmobService(deps: ServiceDependencies) {
     userId: string;
     agent: InmobAgent;
   } & InmobPostBody): Promise<ServiceReply> {
+    const turnStartedAt = monotonicNow();
+    const hardDeadline = turnStartedAt + timeoutMs;
+    const workDeadline = hardDeadline - cleanupReserveMs;
+    const gatewayDeadline = Date.now() + (workDeadline - turnStartedAt);
+    let claimedTurn: { chatId: string; turnId: string } | null = null;
+
+    const turnUncertainReply = (chatId: string | null, errorCode = "uncertain"): ServiceReply => ({
+      statusCode: 202,
+      body: {
+        ...(chatId ? { chatId } : {}),
+        agent: input.agent,
+        turn: {
+          requestId: input.requestId,
+          message: input.message,
+          reply: null,
+          status: "uncertain",
+          errorCode,
+          results: [],
+          createdAt: deps.now().toISOString(),
+        },
+      },
+    });
+
+    const markTurnUncertain = async (errorCode: string) => {
+      if (!claimedTurn) return;
+      await beforeDeadline(() => deps.repository.markTurnUncertain({
+        organizationId: input.organizationId,
+        userId: input.userId,
+        turnId: claimedTurn!.turnId,
+        errorCode,
+        now: deps.now(),
+      }), hardDeadline, monotonicNow);
+    };
+
+    const lateClaimRecovery = (pending: Promise<Awaited<ReturnType<InmobRepository["claimTurn"]>>>) => {
+      void pending.then(async (lateClaim) => {
+        if (lateClaim.kind !== "claimed") return;
+        await deps.repository.markTurnUncertain({
+          organizationId: input.organizationId,
+          userId: input.userId,
+          turnId: lateClaim.turnId,
+          errorCode: "deadline",
+          now: deps.now(),
+        });
+      }).catch(() => undefined);
+    };
+
     try {
       if (!deps.identity) {
         assertInmobGatewayConfigured();
@@ -216,18 +308,19 @@ export function createInmobService(deps: ServiceDependencies) {
           throw new InmobGatewayError("configuration", true, "Identidad de asesor no configurada");
         }
       }
-      const chat = await expireChat(input);
-      const prior = await deps.repository.findTurn({
+      const chat = unwrapBounded(await beforeDeadline(() => expireChat(input), workDeadline, monotonicNow));
+      const prior = unwrapBounded(await beforeDeadline(() => deps.repository.findTurn({
         organizationId: input.organizationId,
         userId: input.userId,
         requestId: input.requestId,
-      });
+      }), workDeadline, monotonicNow));
       if (prior) {
         if (prior.agent !== input.agent || prior.message !== input.message) return errorReply(409, "request_conflict");
         return bodyForTurn(prior);
       }
 
-      const claim = await deps.repository.claimTurn({
+      if (monotonicNow() >= workDeadline) return errorReply(503, "inmob_timeout");
+      const pendingClaim = deps.repository.claimTurn({
         organizationId: input.organizationId,
         userId: input.userId,
         agent: input.agent,
@@ -235,46 +328,52 @@ export function createInmobService(deps: ServiceDependencies) {
         message: input.message,
         now: deps.now(),
       });
+      const claimResult = await beforeDeadline(() => pendingClaim, workDeadline, monotonicNow);
+      if (claimResult.timedOut) {
+        lateClaimRecovery(pendingClaim);
+        return errorReply(503, "inmob_timeout");
+      }
+      const claim = unwrapBounded(claimResult);
       if (claim.kind === "conflict") return errorReply(409, "request_conflict");
       if (claim.kind === "chat_busy") return errorReply(409, "chat_busy");
       if (claim.kind === "existing") {
         if (claim.turn.agent !== input.agent || claim.turn.message !== input.message) return errorReply(409, "request_conflict");
         return bodyForTurn(claim.turn);
       }
+      claimedTurn = { chatId: claim.chatId, turnId: claim.turnId };
 
-      const historyRows = await deps.repository.listHistory({
+      const historyRows = unwrapBounded(await beforeDeadline(() => deps.repository.listHistory({
         organizationId: input.organizationId,
         userId: input.userId,
         chatId: claim.chatId,
         limit: MAX_HISTORY_TURNS,
-      });
+      }), workDeadline, monotonicNow));
       const payload = trustedGatewayIdentity({
         ...input,
         chatId: chat.id,
         history: boundedHistory(historyRows),
         identity: deps.identity,
       });
-      const deadline = Date.now() + timeoutMs;
       const toolResults: InmobToolResult[] = [];
       let reply: string | null = null;
       let results: InmobResult[] = [];
 
       try {
         for (let action = 0; action <= MAX_ACTIONS; action++) {
-          const gatewayResponse = await deps.gateway(payload, { deadline });
+          if (monotonicNow() >= workDeadline) throw new TurnDeadlineExceededError();
+          const gatewayResult = await beforeDeadline(
+            () => deps.gateway(payload, { deadline: gatewayDeadline }),
+            workDeadline,
+            monotonicNow
+          );
+          const gatewayResponse = unwrapBounded(gatewayResult);
           if (gatewayResponse.status === "completed") {
             reply = gatewayResponse.reply;
             results = gatewayResponse.results ?? [];
             break;
           }
           if (action === MAX_ACTIONS) {
-            await deps.repository.markTurnUncertain({
-              organizationId: input.organizationId,
-              userId: input.userId,
-              turnId: claim.turnId,
-              errorCode: "action_limit",
-              now: deps.now(),
-            });
+            await markTurnUncertain("action_limit");
             return errorReply(202, "uncertain");
           }
           const tool = gatewayResponse.tool;
@@ -285,6 +384,14 @@ export function createInmobService(deps: ServiceDependencies) {
             toolCallId: gatewayResponse.toolCallId,
             tool,
             now: deps.now(),
+            workDeadline,
+            hardDeadline,
+            onLateClaim: async (actionId) => deps.repository.markToolActionUncertain({
+              organizationId: input.organizationId,
+              userId: input.userId,
+              actionId,
+              now: deps.now(),
+            }),
           });
           toolResults.push(callResult);
           payload.toolResult = callResult;
@@ -292,62 +399,47 @@ export function createInmobService(deps: ServiceDependencies) {
         }
       } catch (error) {
         if (error instanceof ToolActionConflictError) {
-          await deps.repository.markTurnUncertain({
-            organizationId: input.organizationId,
-            userId: input.userId,
-            turnId: claim.turnId,
-            errorCode: "tool_conflict",
-            now: deps.now(),
-          });
+          await markTurnUncertain("tool_conflict");
           return errorReply(409, "tool_conflict");
+        }
+        if (error instanceof TurnDeadlineExceededError) {
+          await markTurnUncertain("deadline");
+          return turnUncertainReply(claim.chatId, "deadline");
         }
         const uncertain = error instanceof InmobGatewayError ? !error.retrySafe : true;
         const errorCode = error instanceof InmobGatewayError
           ? error.code === "rejected" ? "gateway_rejected" : error.code === "configuration" ? "configuration" : "gateway_uncertain"
           : "action_uncertain";
         if (uncertain) {
-          await deps.repository.markTurnUncertain({
-            organizationId: input.organizationId,
-            userId: input.userId,
-            turnId: claim.turnId,
-            errorCode,
-            now: deps.now(),
-          });
-          return {
-            statusCode: 202,
-            body: {
-              chatId: claim.chatId,
-              agent: input.agent,
-              turn: {
-                requestId: input.requestId,
-                message: input.message,
-                reply: null,
-                status: "uncertain",
-                errorCode,
-                results: [],
-                createdAt: deps.now().toISOString(),
-              },
-            },
-          };
+          await markTurnUncertain(errorCode);
+          return turnUncertainReply(claim.chatId, errorCode);
         }
-        await deps.repository.failTurn({
+        await beforeDeadline(() => deps.repository.failTurn({
           organizationId: input.organizationId,
           userId: input.userId,
           turnId: claim.turnId,
           errorCode,
           now: deps.now(),
-        });
+        }), hardDeadline, monotonicNow);
         return errorReply(503, errorCode);
       }
 
-      await deps.repository.completeTurn({
+      if (monotonicNow() >= workDeadline) {
+        await markTurnUncertain("deadline");
+        return turnUncertainReply(claim.chatId, "deadline");
+      }
+      const completed = await beforeDeadline(() => deps.repository.completeTurn({
         organizationId: input.organizationId,
         userId: input.userId,
         turnId: claim.turnId,
         reply: reply!,
         results,
         now: deps.now(),
-      });
+      }), workDeadline, monotonicNow);
+      if (completed.timedOut || "error" in completed) {
+        await markTurnUncertain("completion_uncertain");
+        return turnUncertainReply(claim.chatId, "completion_uncertain");
+      }
       return {
         statusCode: 200,
         body: {
@@ -365,6 +457,17 @@ export function createInmobService(deps: ServiceDependencies) {
         },
       };
     } catch (error) {
+      if (error instanceof TurnDeadlineExceededError) {
+        if (claimedTurn) {
+          await markTurnUncertain("deadline");
+          return turnUncertainReply(claimedTurn.chatId, "deadline");
+        }
+        return errorReply(503, "inmob_timeout");
+      }
+      if (claimedTurn) {
+        await markTurnUncertain("action_uncertain");
+        return turnUncertainReply(claimedTurn.chatId, "action_uncertain");
+      }
       if (error instanceof InmobGatewayError && error.retrySafe) return errorReply(503, error.code);
       return errorReply(503, "inmob_unavailable");
     }
@@ -377,8 +480,12 @@ export function createInmobService(deps: ServiceDependencies) {
     toolCallId: string;
     tool: InmobTool;
     now: Date;
+    workDeadline: number;
+    hardDeadline: number;
+    onLateClaim: (actionId: string) => Promise<void>;
   }): Promise<InmobToolResult> {
-    const claim = await deps.repository.claimToolAction({
+    if (monotonicNow() >= input.workDeadline) throw new TurnDeadlineExceededError();
+    const pendingClaim = deps.repository.claimToolAction({
       organizationId: input.organizationId,
       userId: input.userId,
       turnId: input.turnId,
@@ -387,11 +494,33 @@ export function createInmobService(deps: ServiceDependencies) {
       inputHash: inputHash(input.tool),
       now: input.now,
     });
+    const claimResult = await beforeDeadline(() => pendingClaim, input.workDeadline, monotonicNow);
+    if (claimResult.timedOut) {
+      void pendingClaim.then(async (lateClaim) => {
+        if (lateClaim.kind === "claimed") await input.onLateClaim(lateClaim.actionId);
+      }).catch(() => undefined);
+      throw new TurnDeadlineExceededError();
+    }
+    const claim = unwrapBounded(claimResult);
     if (claim.kind === "existing") return claim.result;
     if (claim.kind === "conflict") throw new ToolActionConflictError("tool_conflict");
     if (claim.kind === "uncertain") throw new InmobGatewayError("unavailable", false, "La acción anterior no tiene resultado confirmado");
     try {
-      const output = await deps.executeTool(input.organizationId, input.tool, input.userId);
+      const toolResult = await beforeDeadline(
+      () => deps.executeTool(input.organizationId, input.tool, input.userId, { deadline: input.workDeadline }),
+        input.workDeadline,
+        monotonicNow
+      );
+      if (toolResult.timedOut) {
+        await beforeDeadline(() => deps.repository.markToolActionUncertain({
+          organizationId: input.organizationId,
+          userId: input.userId,
+          actionId: claim.actionId,
+          now: deps.now(),
+        }), input.hardDeadline, monotonicNow);
+        throw new TurnDeadlineExceededError();
+      }
+      const output = unwrapBounded(toolResult);
       if (output.uncertain) {
         throw new InmobGatewayError("unavailable", false, "No se pudo confirmar la acción local");
       }
@@ -405,21 +534,40 @@ export function createInmobService(deps: ServiceDependencies) {
         ok: output.ok,
         result: JSON.parse(serializedResult) as unknown,
       };
-      await deps.repository.finishToolAction({
+      if (monotonicNow() >= input.workDeadline) {
+        await beforeDeadline(() => deps.repository.markToolActionUncertain({
+          organizationId: input.organizationId,
+          userId: input.userId,
+          actionId: claim.actionId,
+          now: deps.now(),
+        }), input.hardDeadline, monotonicNow);
+        throw new TurnDeadlineExceededError();
+      }
+      const finished = await beforeDeadline(() => deps.repository.finishToolAction({
         organizationId: input.organizationId,
         userId: input.userId,
         actionId: claim.actionId,
         result,
         now: deps.now(),
-      });
+      }), input.workDeadline, monotonicNow);
+      if (finished.timedOut || "error" in finished) {
+        await beforeDeadline(() => deps.repository.markToolActionUncertain({
+          organizationId: input.organizationId,
+          userId: input.userId,
+          actionId: claim.actionId,
+          now: deps.now(),
+        }), input.hardDeadline, monotonicNow);
+        throw new TurnDeadlineExceededError();
+      }
       return result;
-    } catch {
-      await deps.repository.markToolActionUncertain({
+    } catch (error) {
+      if (error instanceof TurnDeadlineExceededError) throw error;
+      await beforeDeadline(() => deps.repository.markToolActionUncertain({
         organizationId: input.organizationId,
         userId: input.userId,
         actionId: claim.actionId,
         now: deps.now(),
-      });
+      }), input.hardDeadline, monotonicNow);
       throw new InmobGatewayError("unavailable", false, "No se pudo confirmar la acción local");
     }
   }

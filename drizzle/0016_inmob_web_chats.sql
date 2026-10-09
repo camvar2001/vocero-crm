@@ -40,17 +40,21 @@ CREATE TABLE "inmob_tool_action" (
 	CONSTRAINT "inmob_tool_action_status_check" CHECK ("status" in ('running','completed','failed','uncertain'))
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "inmob_web_chat_id_org_user_uq" ON "inmob_web_chat" USING btree ("id","organization_id","user_id");
+--> statement-breakpoint
+CREATE UNIQUE INDEX "inmob_web_turn_id_org_user_uq" ON "inmob_web_turn" USING btree ("id","organization_id","user_id");
+--> statement-breakpoint
 ALTER TABLE "inmob_web_chat" ADD CONSTRAINT "inmob_web_chat_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "inmob_web_chat" ADD CONSTRAINT "inmob_web_chat_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
-ALTER TABLE "inmob_web_turn" ADD CONSTRAINT "inmob_web_turn_chat_id_inmob_web_chat_id_fk" FOREIGN KEY ("chat_id") REFERENCES "public"."inmob_web_chat"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "inmob_web_turn" ADD CONSTRAINT "inmob_web_turn_chat_org_user_fk" FOREIGN KEY ("chat_id", "organization_id", "user_id") REFERENCES "public"."inmob_web_chat"("id", "organization_id", "user_id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "inmob_web_turn" ADD CONSTRAINT "inmob_web_turn_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "inmob_web_turn" ADD CONSTRAINT "inmob_web_turn_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
-ALTER TABLE "inmob_tool_action" ADD CONSTRAINT "inmob_tool_action_turn_id_inmob_web_turn_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."inmob_web_turn"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "inmob_tool_action" ADD CONSTRAINT "inmob_tool_action_turn_org_user_fk" FOREIGN KEY ("turn_id", "organization_id", "user_id") REFERENCES "public"."inmob_web_turn"("id", "organization_id", "user_id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "inmob_tool_action" ADD CONSTRAINT "inmob_tool_action_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint

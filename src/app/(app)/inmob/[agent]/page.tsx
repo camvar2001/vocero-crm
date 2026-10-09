@@ -19,5 +19,5 @@ export default async function InmobChatPage({
   const ownerId = process.env.INMOB_OWNER_USER_ID?.trim();
   if (session.role !== "owner" || !ownerId || session.userId !== ownerId) notFound();
 
-  return <InmobChatClient agent={value as InmobAgent} />;
+  return <InmobChatClient key={value} agent={value as InmobAgent} />;
 }

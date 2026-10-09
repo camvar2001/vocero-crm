@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -1185,6 +1186,7 @@ export const inmobWebChat = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
+    uniqueIndex("inmob_web_chat_id_org_user_uq").on(t.id, t.organizationId, t.userId),
     uniqueIndex("inmob_web_chat_org_user_agent_uq").on(
       t.organizationId,
       t.userId,
@@ -1200,8 +1202,7 @@ export const inmobWebTurn = pgTable(
   {
     id: text("id").primaryKey(),
     chatId: text("chat_id")
-      .notNull()
-      .references(() => inmobWebChat.id, { onDelete: "cascade" }),
+      .notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
@@ -1223,6 +1224,12 @@ export const inmobWebTurn = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "inmob_web_turn_chat_org_user_fk",
+      columns: [t.chatId, t.organizationId, t.userId],
+      foreignColumns: [inmobWebChat.id, inmobWebChat.organizationId, inmobWebChat.userId],
+    }).onDelete("cascade"),
+    uniqueIndex("inmob_web_turn_id_org_user_uq").on(t.id, t.organizationId, t.userId),
     uniqueIndex("inmob_web_turn_org_user_request_uq").on(
       t.organizationId,
       t.userId,
@@ -1246,8 +1253,7 @@ export const inmobToolAction = pgTable(
   {
     id: text("id").primaryKey(),
     turnId: text("turn_id")
-      .notNull()
-      .references(() => inmobWebTurn.id, { onDelete: "cascade" }),
+      .notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
@@ -1267,6 +1273,11 @@ export const inmobToolAction = pgTable(
     completedAt: timestamp("completed_at"),
   },
   (t) => [
+    foreignKey({
+      name: "inmob_tool_action_turn_org_user_fk",
+      columns: [t.turnId, t.organizationId, t.userId],
+      foreignColumns: [inmobWebTurn.id, inmobWebTurn.organizationId, inmobWebTurn.userId],
+    }).onDelete("cascade"),
     uniqueIndex("inmob_tool_action_turn_call_uq").on(t.turnId, t.toolCallId),
     index("inmob_tool_action_org_turn_idx").on(t.organizationId, t.turnId),
   ]

@@ -54,11 +54,12 @@ const harnessSource = `
   import { InmobChatClient } from "@/components/inmob/chat-client";
 
   function Harness() {
-    const [agent, setAgent] = useState("buscador");
+    const initialAgent = new URLSearchParams(location.search).get("agent");
+    const [agent, setAgent] = useState(initialAgent === "secretaria" ? "secretaria" : "buscador");
     return h(React.Fragment, null,
       h("nav", { "aria-label": "Agentes de prueba" },
-        h("button", { onClick: () => setAgent("buscador") }, "Buscador"),
-        h("button", { onClick: () => setAgent("secretaria") }, "Secretaria")
+        h("button", { onClick: () => { setAgent("buscador"); history.replaceState(null, "", "/?agent=buscador"); } }, "Buscador"),
+        h("button", { onClick: () => { setAgent("secretaria"); history.replaceState(null, "", "/?agent=secretaria"); } }, "Secretaria")
       ),
       h(InmobChatClient, { key: agent, agent })
     );
@@ -124,6 +125,11 @@ const server = createServer(async (req, res) => {
         results: [],
         createdAt,
       };
+      if (body.message === "fallo conocido" && attempt === 1) {
+        // El gateway confirma un rechazo antes de reclamar el turno.
+        json(res, 503, { errorCode: "configuration" });
+        return;
+      }
       chat.turns.push(baseTurn);
       if (body.message === "consulta lenta") {
         await new Promise((resolveWait) => setTimeout(resolveWait, 600));
@@ -137,9 +143,10 @@ const server = createServer(async (req, res) => {
         req.socket.destroy();
         return;
       }
-      if (body.message === "fallo conocido") {
-        Object.assign(baseTurn, { status: "failed", errorCode: "gateway_rejected" });
-        json(res, 503, { errorCode: "gateway_rejected" });
+      if (body.message === "respuesta perdida completada") {
+        Object.assign(baseTurn, { status: "completed", reply: "Resultado reconciliado" });
+        // El turno terminó en el servidor aunque el navegador pierda la respuesta.
+        req.socket.destroy();
         return;
       }
       if (body.message === "contenido no confiable") {
@@ -230,11 +237,38 @@ try {
   await page.getByRole("button", { name: "Enviar" }).click();
   await page.getByText("Respuesta de secretaria", { exact: true }).waitFor();
   ok("el segundo agente conserva identidad y conversación propias", posts.at(-1)?.agent === "secretaria" && chats.get("secretaria").chatId !== chats.get("buscador").chatId);
+  const beforeLateRecovery = posts.length;
+  await page.getByRole("button", { name: "Buscador" }).click();
+  await page.getByRole("heading", { name: "Buscador" }).waitFor();
+  await page.getByText("consulta lenta", { exact: true }).waitFor();
+  ok("al volver, GET recupera la respuesta tardía sin un segundo POST", await page.getByText("Respuesta de buscador", { exact: true }).last().isVisible() && posts.length === beforeLateRecovery);
+  await page.getByRole("button", { name: "Secretaria" }).click();
+  await page.getByRole("heading", { name: "Secretaria" }).waitFor();
+  await page.getByText("Historial de Secretaria", { exact: true }).waitFor();
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("fallo conocido");
   await page.getByRole("button", { name: "Enviar" }).click();
   await page.getByRole("alert").filter({ hasText: /No se pudo|falló|intenta/i }).first().waitFor();
   ok("un rechazo conocido muestra error recuperable y conserva el texto", (await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue()) === "fallo conocido");
+  ok("el rechazo requiere consultar el estado antes de habilitar otro POST", await page.getByRole("button", { name: "Enviar" }).isDisabled());
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByText("El servidor no guardó este mensaje", { exact: false }).waitFor();
+  ok("el borrador rechazado sobrevive a una recarga", (await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue()) === "fallo conocido" && posts.filter((post) => post.message === "fallo conocido").length === 1);
+  await page.getByRole("button", { name: "Consultar estado" }).click();
+  await page.getByText("El servidor no guardó este mensaje", { exact: false }).waitFor();
+  ok("GET confirma que el rechazo no se persistió y restaura el borrador", (await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).inputValue()) === "fallo conocido" && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
+  await page.getByRole("button", { name: "Enviar" }).click();
+  await page.getByText("Respuesta de secretaria", { exact: true }).last().waitFor();
+  const rejectedPosts = posts.filter((post) => post.message === "fallo conocido");
+  ok("el reenvío solo ocurre tras el GET y conserva el UUID", rejectedPosts.length === 2 && rejectedPosts[0].requestId === rejectedPosts[1].requestId);
+
+  await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida completada");
+  await page.getByRole("button", { name: "Enviar" }).click();
+  await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
+  await page.getByRole("button", { name: "Consultar estado" }).click();
+  await page.getByText("Resultado reconciliado", { exact: true }).waitFor();
+  const completedLossPosts = posts.filter((post) => post.message === "respuesta perdida completada");
+  ok("GET reemplaza la incertidumbre local con la respuesta completada del servidor", completedLossPosts.length === 1 && !(await page.getByRole("alert").filter({ hasText: /No pudimos confirmar/ }).count()) && !(await page.getByRole("button", { name: "Enviar" }).isDisabled()));
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("respuesta perdida");
   await page.getByRole("button", { name: "Enviar" }).click();
@@ -244,7 +278,15 @@ try {
   await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByRole("alert").filter({ hasText: /incierto|confirmar|actualiza/i }).first().waitFor();
-  ok("la respuesta perdida queda incierta y consultar estado/recargar no reenvían el POST", uncertainPosts === 1 && posts.filter((post) => post.message === "respuesta perdida").length === 1);
+  ok("la respuesta incierta queda persistida sin reenviar al recargar", uncertainPosts === 1 && posts.filter((post) => post.message === "respuesta perdida").length === 1 && await page.getByRole("button", { name: "Continuar con otra consulta" }).isVisible());
+  ok("el envío permanece bloqueado hasta reconocer la incertidumbre", await page.getByRole("button", { name: "Enviar" }).isDisabled());
+  await page.getByRole("button", { name: "Continuar con otra consulta" }).click();
+  const secretaryComposer = page.getByRole("textbox", { name: "Mensaje para Secretaria" });
+  await secretaryComposer.fill("respuesta perdida");
+  ok("la misma solicitud incierta nunca se ofrece para reenvío", await page.getByRole("button", { name: "Enviar" }).isDisabled() && posts.filter((post) => post.message === "respuesta perdida").length === 1);
+  await secretaryComposer.fill("otra consulta después de revisar");
+  await page.getByRole("button", { name: "Enviar" }).click();
+  await page.getByText("Respuesta de secretaria", { exact: true }).last().waitFor();
 
   await page.getByRole("textbox", { name: "Mensaje para Secretaria" }).fill("contenido no confiable");
   await page.getByRole("button", { name: "Enviar" }).click();

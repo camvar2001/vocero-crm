@@ -45,12 +45,14 @@ const toolSchema = z.discriminatedUnion("name", [
 
 type Tool = z.infer<typeof toolSchema>;
 type DispatchResult = { ok: boolean; result: unknown; uncertain?: boolean };
+type ToolExecutionOptions = { deadline?: number };
 
 /** Executa únicamente operaciones nativas; la organización viene de sesión. */
 export async function executeSecretariaTool(
   organizationId: string,
   tool: unknown,
-  userId?: string
+  userId?: string,
+  options: ToolExecutionOptions = {}
 ): Promise<DispatchResult> {
   const parsed = toolSchema.safeParse(tool);
   if (!parsed.success) return failure("La solicitud de acción no es válida.");
@@ -59,7 +61,7 @@ export async function executeSecretariaTool(
   }
 
   try {
-    return await dispatch(organizationId, parsed.data, userId);
+    return await dispatch(organizationId, parsed.data, userId, options);
   } catch (error) {
     if (error instanceof BookingError) {
       return failure(safeBookingMessage(error));
@@ -68,7 +70,7 @@ export async function executeSecretariaTool(
   }
 }
 
-async function dispatch(organizationId: string, tool: Tool, userId?: string): Promise<DispatchResult> {
+async function dispatch(organizationId: string, tool: Tool, userId: string | undefined, options: ToolExecutionOptions): Promise<DispatchResult> {
   switch (tool.name) {
     case "contact_search":
       return success({ candidates: await searchContactsForTool(organizationId, tool.arguments.query) });
@@ -80,8 +82,12 @@ async function dispatch(organizationId: string, tool: Tool, userId?: string): Pr
         name: tool.arguments.name,
         phone: tool.arguments.phone,
         notes: tool.arguments.notes,
+        deadline: options.deadline,
       });
       if (!result.ok) {
+        if (result.reason === "uncertain") {
+          return failure("No se pudo confirmar el resultado del alta del contacto.", true);
+        }
         return failure(result.reason === "duplicate"
           ? "Ya existe un contacto con ese teléfono."
           : "No se pudo crear el contacto porque el pipeline no tiene etapas abiertas.");
@@ -128,6 +134,7 @@ async function dispatch(organizationId: string, tool: Tool, userId?: string): Pr
     case "agenda_create": {
       const contact = await getContactById(organizationId, tool.arguments.contactId);
       if (!contact || contact.archivedAt) return failure("No encontramos ese contacto activo.");
+      assertBeforeDeadline(options);
       const result = await createSessionBooking({
         organizationId,
         contactId: contact.id,
@@ -137,6 +144,7 @@ async function dispatch(organizationId: string, tool: Tool, userId?: string): Pr
         notes: tool.arguments.notes,
         delivery: "local-only",
         advanceLead: false,
+        deadline: options.deadline,
       });
       return success({
         bookingId: result.booking.id,
@@ -150,10 +158,12 @@ async function dispatch(organizationId: string, tool: Tool, userId?: string): Pr
       if (!(await isLocalBooking(organizationId, tool.arguments.bookingId))) {
         return failure("Solo puedes reprogramar citas creadas localmente por Secretaria.");
       }
+      assertBeforeDeadline(options);
       const result = await rescheduleBooking({
         organizationId,
         bookingId: tool.arguments.bookingId,
         startUtc: tool.arguments.startUtc,
+        deadline: options.deadline,
       });
       return success({
         bookingId: result.booking.id,
@@ -167,8 +177,15 @@ async function dispatch(organizationId: string, tool: Tool, userId?: string): Pr
       if (!(await isLocalBooking(organizationId, tool.arguments.bookingId))) {
         return failure("Solo puedes cancelar citas creadas localmente por Secretaria.");
       }
-      await cancelBooking({ organizationId, bookingId: tool.arguments.bookingId });
+      assertBeforeDeadline(options);
+      await cancelBooking({ organizationId, bookingId: tool.arguments.bookingId, deadline: options.deadline });
       return success({ bookingId: tool.arguments.bookingId, status: "cancelada" });
+  }
+}
+
+function assertBeforeDeadline(options: ToolExecutionOptions): void {
+  if (options.deadline !== undefined && globalThis.performance.now() >= options.deadline) {
+    throw new Error("secretaria_tool_deadline");
   }
 }
 

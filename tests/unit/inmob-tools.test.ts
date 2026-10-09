@@ -17,6 +17,7 @@ vi.mock("@/server/inmob/flag", () => ({ inmobEnabled }));
 vi.mock("@/server/agenda/availability", () => ({ computeAvailability }));
 vi.mock("@/server/agenda/queries", () => ({ listBookingsInRange }));
 vi.mock("@/server/agenda/service", () => ({
+  BookingError: class BookingError extends Error {},
   createSessionBooking,
   rescheduleBooking,
   cancelBooking,
@@ -102,7 +103,7 @@ describe("dispatcher nativo de Secretaria", () => {
         startUtc: "2026-10-14T13:00:00.000Z",
         notes: "Visita de prueba",
       },
-    });
+    }, undefined, { deadline: 123 });
 
     expect(getContactById).toHaveBeenCalledWith("org_a", "ct_owned");
     expect(createSessionBooking).toHaveBeenCalledWith(expect.objectContaining({
@@ -113,6 +114,7 @@ describe("dispatcher nativo de Secretaria", () => {
       delivery: "local-only",
       advanceLead: false,
       notes: "Visita de prueba",
+      deadline: 123,
     }));
   });
 
@@ -146,7 +148,22 @@ describe("dispatcher nativo de Secretaria", () => {
     });
 
     expect(result.ok).toBe(false);
+    expect(result.uncertain).toBe(true);
     expect(JSON.stringify(result)).not.toContain("secret");
+  });
+
+  it("marca incierta una falla inesperada tras iniciar el alta de contacto", async () => {
+    const { executeSecretariaTool } = await import("@/server/inmob/tools");
+    createManualContact.mockRejectedValue(new Error("commit acknowledgment lost"));
+
+    const result = await executeSecretariaTool("org_a", {
+      name: "contact_create",
+      arguments: { name: "Ana Solís", phone: "59170000000" },
+    }, "usr_owner");
+
+    expect(result.ok).toBe(false);
+    expect(result.uncertain).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("commit acknowledgment lost");
   });
 
   it("no reprograma una cita conectada a Zoom desde Secretaria", async () => {

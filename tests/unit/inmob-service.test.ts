@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { InmobGatewayResponse } from "@/lib/inmob";
 
 const input = {
   organizationId: "org_primary",
@@ -20,12 +21,13 @@ function fakeRepository(overrides: Record<string, unknown> = {}) {
     finishToolAction: vi.fn(async () => undefined),
     markToolActionUncertain: vi.fn(async () => undefined),
     expireRunningTurns: vi.fn(async () => 0),
+    getChat: vi.fn(async () => ({ id: "iwc_1", agent: "buscador" as const })),
     readChat: vi.fn(async () => ({ chatId: "iwc_1", agent: "buscador", turns: [] })),
     ...overrides,
   };
 }
 
-const gatewayReply = {
+const gatewayReply: InmobGatewayResponse = {
   version: 1,
   requestId: input.requestId,
   agent: "buscador",
@@ -146,14 +148,14 @@ describe("INMOB service claims, replay safety, and recovery", () => {
       status: "tool_request",
       toolCallId: "c3c3c3c3-c3c3-43c3-83c3-c3c3c3c3c3c3",
       tool: { name: "agenda_availability", arguments: {} },
-    };
+    } as const satisfies InmobGatewayResponse;
     const finalReply = {
       version: 1,
       requestId: input.requestId,
       agent: "secretaria",
       status: "completed",
       reply: "Tengo dos horarios disponibles.",
-    };
+    } as const satisfies InmobGatewayResponse;
     const repository = fakeRepository();
     const gateway = vi.fn()
       .mockResolvedValueOnce(toolRequest)
@@ -166,7 +168,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
 
     expect(result.statusCode).toBe(200);
     expect(executeTool).toHaveBeenCalledOnce();
-    expect(executeTool).toHaveBeenCalledWith("org_primary", toolRequest.tool, "usr_owner");
+    expect(executeTool).toHaveBeenCalledWith("org_primary", toolRequest.tool, "usr_owner", expect.objectContaining({ deadline: expect.any(Number) }));
     expect(gateway).toHaveBeenCalledTimes(2);
     expect(gateway.mock.calls[1]?.[0]).toMatchObject({
       requestId: input.requestId,
@@ -184,7 +186,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
       status: "tool_request",
       toolCallId: "c3c3c3c3-c3c3-43c3-83c3-c3c3c3c3c3c3",
       tool: { name: "agenda_cancel", arguments: { bookingId: "bk_other" } },
-    };
+    } as const satisfies InmobGatewayResponse;
     const repository = fakeRepository({
       claimToolAction: vi.fn(async () => ({ kind: "conflict" })),
     });
@@ -210,7 +212,7 @@ describe("INMOB service claims, replay safety, and recovery", () => {
       status: "tool_request",
       toolCallId: "c3c3c3c3-c3c3-43c3-83c3-c3c3c3c3c3c3",
       tool: { name: "agenda_create", arguments: { contactId: "ct_1", startUtc: "2026-10-09T15:00:00.000Z" } },
-    };
+    } as const satisfies InmobGatewayResponse;
     const repository = fakeRepository();
     const gateway = vi.fn(async () => toolRequest);
     const executeTool = vi.fn(async () => ({ ok: false, uncertain: true, result: { error: "No se pudo confirmar" } }));
@@ -278,5 +280,82 @@ describe("INMOB service claims, replay safety, and recovery", () => {
     expect(sentHistory).toHaveLength(40);
     expect(sentHistory.reduce((sum, turn) => sum + turn.content.length, 0)).toBeLessThanOrEqual(32_000);
     expect(sentHistory[0]?.content).toContain("5:");
+  });
+
+  it("starts the turn deadline before chat lookup and never claims after that lookup expires", async () => {
+    const repository = fakeRepository({
+      getChat: vi.fn(() => new Promise<{ id: string; agent: "buscador" }>(() => undefined)),
+    });
+    const gateway = vi.fn(async () => gatewayReply);
+    const { createInmobService } = await import("@/server/inmob/service");
+    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date(), turnTimeoutMs: 80 });
+    const startedAt = Date.now();
+
+    const result = await service.submitMessage(input);
+
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(result.statusCode).toBe(503);
+    expect(repository.claimTurn).not.toHaveBeenCalled();
+    expect(gateway).not.toHaveBeenCalled();
+  });
+
+  it("marks a claimed turn uncertain when history loading outlives the total deadline", async () => {
+    const repository = fakeRepository({
+      listHistory: vi.fn(() => new Promise<Array<{ message: string; reply: string }>>(() => undefined)),
+    });
+    const gateway = vi.fn(async () => gatewayReply);
+    const { createInmobService } = await import("@/server/inmob/service");
+    const service = createInmobService({ repository, gateway, executeTool: vi.fn(), identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date(), turnTimeoutMs: 80 });
+    const startedAt = Date.now();
+
+    const result = await service.submitMessage(input);
+
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(result.statusCode).toBe(202);
+    expect(result.body).toMatchObject({ turn: { status: "uncertain", errorCode: "deadline" } });
+    expect(repository.markTurnUncertain).toHaveBeenCalledOnce();
+    expect(gateway).not.toHaveBeenCalled();
+  });
+
+  it("times out a local action without starting a continuation or saving its late result", async () => {
+    const toolRequest = {
+      version: 1,
+      requestId: input.requestId,
+      agent: "secretaria",
+      status: "tool_request",
+      toolCallId: "c3c3c3c3-c3c3-43c3-83c3-c3c3c3c3c3c3",
+      tool: { name: "contact_create", arguments: { name: "Ana Solís", phone: "59170000000" } },
+    } as const satisfies InmobGatewayResponse;
+    let releaseTool!: (value: { ok: true; result: { contactId: string } }) => void;
+    let markToolStarted!: () => void;
+    const toolStarted = new Promise<void>((resolve) => { markToolStarted = resolve; });
+    const delayedTool = new Promise<{ ok: true; result: { contactId: string } }>((resolve) => { releaseTool = resolve; });
+    const repository = fakeRepository();
+    const gateway = vi.fn(async () => toolRequest);
+    const executeTool = vi.fn(() => {
+      markToolStarted();
+      return delayedTool;
+    });
+    const { createInmobService } = await import("@/server/inmob/service");
+    const service = createInmobService({ repository, gateway, executeTool, identity: { advisorId: "fixture_1", advisorPhone: "+59170000000" }, now: () => new Date(), turnTimeoutMs: 120 });
+    const startedAt = Date.now();
+    const pending = service.submitMessage({ ...input, agent: "secretaria" });
+    await toolStarted;
+
+    const result = await pending;
+
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(result.statusCode).toBe(202);
+    expect(result.body).toMatchObject({ turn: { status: "uncertain", errorCode: "deadline" } });
+    expect(repository.markToolActionUncertain).toHaveBeenCalledOnce();
+    expect(repository.markTurnUncertain).toHaveBeenCalledOnce();
+    expect(repository.finishToolAction).not.toHaveBeenCalled();
+    expect(gateway).toHaveBeenCalledOnce();
+
+    releaseTool({ ok: true, result: { contactId: "ct_late" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(repository.finishToolAction).not.toHaveBeenCalled();
+    expect(gateway).toHaveBeenCalledOnce();
   });
 });

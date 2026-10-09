@@ -128,6 +128,9 @@ export const POST = withAuth(async (session, req: Request) => {
   if (!result.ok && result.reason === "duplicate") {
     return apiError(409, "duplicate", "Ya existe un contacto con ese teléfono");
   }
+  if (!result.ok && result.reason === "uncertain") {
+    return apiError(503, "create_uncertain", "No se pudo confirmar el alta del contacto");
+  }
   if (!result.ok) {
     return apiError(
       422,

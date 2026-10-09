@@ -20,16 +20,16 @@ async function authorizedSession() {
     const session = await requireSession();
     const ownerId = process.env.INMOB_OWNER_USER_ID?.trim();
     if (!ownerId || session.userId !== ownerId || session.role !== "owner") {
-      return { response: apiError(403, "forbidden", "Acceso no autorizado") } as const;
+      return { ok: false as const, response: apiError(403, "forbidden", "Acceso no autorizado") };
     }
-    return { session } as const;
+    return { ok: true as const, session };
   } catch (error) {
     if (
       error instanceof Error && (error.name === "UnauthorizedError" || error.message === "unauthorized")
     ) {
-      return { response: apiError(401, "unauthorized", "No autenticado") } as const;
+      return { ok: false as const, response: apiError(401, "unauthorized", "No autenticado") };
     }
-    return { response: apiError(503, "auth_unavailable", "No se pudo verificar la sesión") } as const;
+    return { ok: false as const, response: apiError(503, "auth_unavailable", "No se pudo verificar la sesión") };
   }
 }
 
@@ -81,7 +81,7 @@ export async function GET(_req: Request, context: RouteContext): Promise<Respons
   const agent = await routeAgent(context);
   if (!agent) return apiError(404, "not_found", "Agente no encontrado");
   const auth = await authorizedSession();
-  if ("response" in auth) return auth.response;
+  if (!auth.ok) return auth.response;
   try {
     return Response.json(await getInmobChat({
       organizationId: auth.session.organizationId,
@@ -98,7 +98,7 @@ export async function POST(req: Request, context: RouteContext): Promise<Respons
   const agent = await routeAgent(context);
   if (!agent) return apiError(404, "not_found", "Agente no encontrado");
   const auth = await authorizedSession();
-  if ("response" in auth) return auth.response;
+  if (!auth.ok) return auth.response;
   if (!sameOrigin(req)) return apiError(403, "origin_forbidden", "Origen no autorizado");
 
   const parsedBody = await readLimitedJson(req);

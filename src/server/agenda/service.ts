@@ -84,6 +84,13 @@ export type BookingResult = {
 /** Cuántas alternativas se devuelven cuando el hueco se ocupó. */
 const FRESH_ALTERNATIVES = 3;
 
+/** Bounded agent turns pass this monotonic deadline to the final write boundary. */
+function assertBeforeDeadline(deadline?: number): void {
+  if (deadline !== undefined && globalThis.performance.now() >= deadline) {
+    throw new Error("agenda_action_deadline");
+  }
+}
+
 export async function createSessionBooking(input: {
   organizationId: string;
   startUtc: string;
@@ -104,6 +111,8 @@ export async function createSessionBooking(input: {
    */
   requireOffer: boolean;
   now?: Date;
+  /** Optional monotonic deadline for bounded native tool actions. */
+  deadline?: number;
 }): Promise<BookingResult> {
   const db = getDb();
   const settings = await getSettings(input.organizationId);
@@ -187,6 +196,7 @@ export async function createSessionBooking(input: {
     )
     .limit(1);
 
+  assertBeforeDeadline(input.deadline);
   let booking: BookingRow;
   try {
     const inserted = await db
@@ -228,6 +238,7 @@ export async function createSessionBooking(input: {
   }
 
   // La oferta cumplió su propósito.
+  assertBeforeDeadline(input.deadline);
   if (input.conversationId) {
     await clearOffers(input.organizationId, input.conversationId).catch(
       (err) => {
@@ -237,8 +248,10 @@ export async function createSessionBooking(input: {
   }
 
   // Efectos secundarios: ninguno puede revertir la cita.
+  assertBeforeDeadline(input.deadline);
   const delivered = await deliverMeeting(booking, settings, contactName);
   if (input.advanceLead !== false) {
+    assertBeforeDeadline(input.deadline);
     await advanceLeadStage(
       input.organizationId,
       contactId,
@@ -303,6 +316,7 @@ export async function rescheduleBooking(input: {
   bookingId: string;
   startUtc: string;
   now?: Date;
+  deadline?: number;
 }): Promise<BookingResult> {
   const db = getDb();
   const booking = await getOwnBooking(input.organizationId, input.bookingId);
@@ -323,6 +337,7 @@ export async function rescheduleBooking(input: {
 
   let next: BookingRow;
   try {
+    assertBeforeDeadline(input.deadline);
     const updated = await db
       .update(schema.booking)
       .set({ scheduledAt: new Date(slot.startUtc), updatedAt: new Date() })
@@ -339,6 +354,7 @@ export async function rescheduleBooking(input: {
   // Mover la reunión en el proveedor conserva el enlace: es la MISMA reunión,
   // en otra hora. Un fallo aquí no deshace nada — el enlace anterior sigue
   // sirviendo en la práctica.
+  assertBeforeDeadline(input.deadline);
   await withConnector(next, settings, async (conn, externalRef) => {
     await conn.updateMeeting(externalRef, {
       startUtc: slot.startUtc,
@@ -434,17 +450,20 @@ export async function rescheduleForConversation(input: {
 export async function cancelBooking(input: {
   organizationId: string;
   bookingId: string;
+  deadline?: number;
 }): Promise<void> {
   const db = getDb();
   const booking = await getOwnBooking(input.organizationId, input.bookingId);
   if (booking.status === "cancelada") return;
 
+  assertBeforeDeadline(input.deadline);
   await db
     .update(schema.booking)
     .set({ status: "cancelada", updatedAt: new Date() })
     .where(eq(schema.booking.id, booking.id));
 
   const settings = await getSettings(input.organizationId);
+  assertBeforeDeadline(input.deadline);
   await withConnector(booking, settings, async (conn, externalRef) => {
     await conn.deleteMeeting(externalRef);
   });

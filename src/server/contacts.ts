@@ -1,4 +1,4 @@
-import { desc, eq, isNull, or, sql } from "drizzle-orm";
+import { asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -80,7 +80,7 @@ export async function searchContactsForTool(
 
 export type ManualContactCreateResult =
   | { ok: true; contact: ReturnType<typeof serializeContact>; leadId: string }
-  | { ok: false; reason: "duplicate" | "no_stage" };
+  | { ok: false; reason: "duplicate" | "no_stage" | "uncertain" };
 
 /** Alta compartida por el endpoint manual y el dispatcher de Secretaria. */
 export async function createManualContact(input: {
@@ -91,8 +91,27 @@ export async function createManualContact(input: {
   notes?: string;
   source?: "anuncio" | "organico" | "referido" | "conocido" | "otro";
   stageId?: string;
+  /** Monotonic deadline supplied by a bounded agent tool invocation. */
+  deadline?: number;
 }): Promise<ManualContactCreateResult> {
   const db = getDb();
+  const availableStages = await db
+    .select({ id: schema.pipelineStage.id })
+    .from(schema.pipelineStage)
+    .where(scoped(
+      schema.pipelineStage.organizationId,
+      input.organizationId,
+      eq(schema.pipelineStage.kind, "open"),
+      input.stageId ? eq(schema.pipelineStage.id, input.stageId) : undefined
+    ))
+    .orderBy(asc(schema.pipelineStage.position))
+    .limit(1);
+  const stageId = availableStages[0]?.id;
+  if (!stageId) return { ok: false, reason: "no_stage" };
+  if (input.deadline !== undefined && globalThis.performance.now() >= input.deadline) {
+    throw new Error("contact_create_deadline");
+  }
+
   const phone = normalizeMx(input.phone);
   const inserted = await db
     .insert(schema.contact)
@@ -116,14 +135,32 @@ export async function createManualContact(input: {
   const contact = inserted[0];
   if (!contact) return { ok: false, reason: "duplicate" };
 
+  if (input.deadline !== undefined && globalThis.performance.now() >= input.deadline) {
+    throw new Error("contact_create_deadline");
+  }
+
   const lead = await createLeadForContact({
     organizationId: input.organizationId,
     contactId: contact.id,
-    stageId: input.stageId,
+    stageId,
     source: "dueno",
     actorUserId: input.userId,
   });
-  if (!lead) return { ok: false, reason: "no_stage" };
+  if (!lead) {
+    // Another writer may have created the lead after our preflight. Reconcile
+    // that race; if no lead is visible, the contact write may be partial.
+    const existingLead = await db
+      .select({ id: schema.lead.id })
+      .from(schema.lead)
+      .where(scoped(
+        schema.lead.organizationId,
+        input.organizationId,
+        eq(schema.lead.contactId, contact.id)
+      ))
+      .limit(1);
+    if (!existingLead[0]) return { ok: false, reason: "uncertain" };
+    return { ok: true, contact: serializeContact(contact), leadId: existingLead[0].id };
+  }
 
   return {
     ok: true,

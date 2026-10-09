@@ -27,11 +27,14 @@ vi.mock("@/server/agenda/settings", () => ({
   }),
 }));
 vi.mock("@/server/agenda/availability", () => ({
-  findSlot: async (_organizationId: string, startUtc: string) => ({
-    startUtc,
-    endUtc: "2026-10-14T13:30:00.000Z",
-    label: "mié 14 oct, 09:00",
-  }),
+  findSlot: async (_organizationId: string, startUtc: string) => {
+    if (slotDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, slotDelayMs));
+    return {
+      startUtc,
+      endUtc: "2026-10-14T13:30:00.000Z",
+      label: "mié 14 oct, 09:00",
+    };
+  },
   computeAvailability: async () => [],
 }));
 vi.mock("@/server/agenda/offers", async (importOriginal) => {
@@ -62,32 +65,44 @@ vi.mock("@/server/events/bus", () => ({ publish: vi.fn() }));
 const selectRows: unknown[][] = [];
 let inserted: Record<string, unknown> | null = null;
 let updated: Record<string, unknown> = {};
+let insertCalls = 0;
+let updateCalls = 0;
+let selectDelayMs = 0;
+let slotDelayMs = 0;
 
 function selectChain(rows: unknown[]) {
   const chain: Record<string, unknown> = {};
   for (const method of ["from", "where", "orderBy", "innerJoin", "leftJoin"]) {
     chain[method] = () => chain;
   }
-  chain.limit = () => Promise.resolve(rows);
+  chain.limit = () => new Promise((resolve) => {
+    setTimeout(() => resolve(rows), selectDelayMs);
+  });
   return chain;
 }
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     select: () => selectChain(selectRows.shift() ?? []),
-    insert: () => ({
-      values: (values: Record<string, unknown>) => ({
-        returning: async () => {
-          inserted = values;
-          return [{ ...values, scheduledAt: new Date(SLOT), externalRef: null, linkPending: false }];
-        },
-      }),
-    }),
-    update: () => ({
-      set: (values: Record<string, unknown>) => ({
-        where: () => ({ returning: async () => [{ ...updated, ...values }] }),
-      }),
-    }),
+    insert: () => {
+      insertCalls += 1;
+      return {
+        values: (values: Record<string, unknown>) => ({
+          returning: async () => {
+            inserted = values;
+            return [{ ...values, scheduledAt: new Date(SLOT), externalRef: null, linkPending: false }];
+          },
+        }),
+      };
+    },
+    update: () => {
+      updateCalls += 1;
+      return {
+        set: (values: Record<string, unknown>) => ({
+          where: () => ({ returning: async () => [{ ...updated, ...values }] }),
+        }),
+      };
+    },
   }),
   schema: {
     booking: {},
@@ -119,6 +134,10 @@ describe("citas nativas locales de Secretaria", () => {
     selectRows.length = 0;
     inserted = null;
     updated = { ...LOCAL_BOOKING };
+    insertCalls = 0;
+    updateCalls = 0;
+    selectDelayMs = 0;
+    slotDelayMs = 0;
     createMeeting.mockClear();
     updateMeeting.mockClear();
     deleteMeeting.mockClear();
@@ -168,5 +187,54 @@ describe("citas nativas locales de Secretaria", () => {
 
     expect(bindConnector).not.toHaveBeenCalled();
     expect(deleteMeeting).not.toHaveBeenCalled();
+  });
+
+  it("no inserta una cita si una lectura de contacto vence el deadline compartido", async () => {
+    const { createSessionBooking } = await import("@/server/agenda/service");
+    selectRows.push([{ name: "Ana" }]);
+    selectDelayMs = 25;
+
+    await expect(createSessionBooking({
+      organizationId: "org_a",
+      contactId: "ct_a",
+      startUtc: SLOT,
+      source: "manual",
+      requireOffer: false,
+      delivery: "local-only",
+      advanceLead: false,
+      deadline: globalThis.performance.now() + 5,
+    })).rejects.toThrow(/deadline/i);
+
+    expect(insertCalls).toBe(0);
+    expect(inserted).toBeNull();
+  });
+
+  it("no reprograma si la disponibilidad termina de leerse después del deadline", async () => {
+    const { rescheduleBooking } = await import("@/server/agenda/service");
+    selectRows.push([{ ...LOCAL_BOOKING, externalRef: "" }]);
+    slotDelayMs = 25;
+
+    await expect(rescheduleBooking({
+      organizationId: "org_a",
+      bookingId: "bk_local",
+      startUtc: SLOT,
+      deadline: globalThis.performance.now() + 5,
+    })).rejects.toThrow(/deadline/i);
+
+    expect(updateCalls).toBe(0);
+  });
+
+  it("no cancela si la lectura de la cita termina después del deadline", async () => {
+    const { cancelBooking } = await import("@/server/agenda/service");
+    selectRows.push([{ ...LOCAL_BOOKING, externalRef: "" }]);
+    selectDelayMs = 25;
+
+    await expect(cancelBooking({
+      organizationId: "org_a",
+      bookingId: "bk_local",
+      deadline: globalThis.performance.now() + 5,
+    })).rejects.toThrow(/deadline/i);
+
+    expect(updateCalls).toBe(0);
   });
 });

@@ -8,16 +8,19 @@ const state = vi.hoisted(() => ({
     | null,
   getChat: vi.fn(async () => ({ chatId: "iwc_1", agent: "buscador", turns: [] })),
   submit: vi.fn(async (input: Record<string, unknown>) => ({
-    chatId: "iwc_1",
-    agent: input.agent,
-    turn: {
-      requestId: input.requestId,
-      message: input.message,
-      reply: "Respuesta",
-      status: "completed",
-      errorCode: null,
-      results: [],
-      createdAt: "2026-10-08T12:00:00.000Z",
+    statusCode: 200,
+    body: {
+      chatId: "iwc_1",
+      agent: String(input.agent),
+      turn: {
+        requestId: String(input.requestId),
+        message: String(input.message),
+        reply: "Respuesta",
+        status: "completed",
+        errorCode: null,
+        results: [],
+        createdAt: "2026-10-08T12:00:00.000Z",
+      },
     },
   })),
 }));
@@ -28,7 +31,10 @@ vi.mock("@/lib/auth/session", () => ({
     return state.session;
   },
 }));
-vi.mock("@/server/inmob/flag", () => ({ inmobEnabled: () => state.enabled }));
+vi.mock("@/server/inmob/flag", () => ({
+  inmobEnabled: () => state.enabled,
+  inmobDisabledResponse: () => new Response(null, { status: 404 }),
+}));
 vi.mock("@/server/inmob/service", () => ({
   getInmobChat: state.getChat,
   submitInmobMessage: state.submit,

@@ -15,7 +15,12 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { InmobAgent, InmobChat, InmobResult, InmobTurn } from "@/lib/inmob";
 
-type RecoveryDraft = { requestId: string; message: string; createdAt: string };
+type RecoveryDraft = {
+  requestId: string;
+  message: string;
+  createdAt: string;
+  state: "pending" | "uncertain" | "rejected" | "not_persisted";
+};
 
 const AGENT_COPY: Record<InmobAgent, { title: string; description: string; hint: string }> = {
   buscador: {
@@ -34,6 +39,10 @@ function storageKey(chatId: string) {
   return `vocero:inmob:pending:${chatId}`;
 }
 
+function draftStorageKey(chatId: string) {
+  return `vocero:inmob:draft:${chatId}`;
+}
+
 function readRecovery(chatId: string): RecoveryDraft | null {
   try {
     const raw = window.sessionStorage.getItem(storageKey(chatId));
@@ -44,7 +53,16 @@ function readRecovery(chatId: string): RecoveryDraft | null {
       typeof value.message === "string" &&
       typeof value.createdAt === "string"
     ) {
-      return { requestId: value.requestId, message: value.message, createdAt: value.createdAt };
+      const state = value.state;
+      return {
+        requestId: value.requestId,
+        message: value.message,
+        createdAt: value.createdAt,
+        state:
+          state === "pending" || state === "rejected" || state === "not_persisted"
+            ? state
+            : "uncertain",
+      };
     }
   } catch {
     // El historial del servidor sigue siendo la fuente de verdad si el storage
@@ -62,6 +80,23 @@ function writeRecovery(chatId: string, value: RecoveryDraft | null) {
   }
 }
 
+function readDraft(chatId: string): string {
+  try {
+    return window.sessionStorage.getItem(draftStorageKey(chatId)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeDraft(chatId: string, value: string) {
+  try {
+    if (value) window.sessionStorage.setItem(draftStorageKey(chatId), value);
+    else window.sessionStorage.removeItem(draftStorageKey(chatId));
+  } catch {
+    // El borrador visible sigue disponible mientras la página está abierta.
+  }
+}
+
 function newRequestId(): string {
   if (typeof window !== "undefined" && window.crypto?.randomUUID) {
     return window.crypto.randomUUID();
@@ -74,14 +109,14 @@ function newRequestId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function mergeTurn(turns: InmobTurn[], next: InmobTurn): InmobTurn[] {
+function mergeTurn(turns: InmobTurn[], next: InmobTurn, authoritative = false): InmobTurn[] {
   const index = turns.findIndex((turn) => turn.requestId === next.requestId);
   if (index < 0) return [...turns, next];
   const merged = [...turns];
   // El historial persistido puede llegar después de una respuesta rápida del
   // POST. Un estado final nunca retrocede a running.
   const previous = merged[index];
-  merged[index] = previous.status === "running" ? next : previous;
+  merged[index] = authoritative || previous.status === "running" ? next : previous;
   return merged;
 }
 
@@ -149,7 +184,15 @@ function friendlyError(code: string | null): string {
   }
 }
 
-function TurnStatus({ turn }: { turn: InmobTurn }) {
+function TurnStatus({
+  turn,
+  onContinue,
+  acknowledged = false,
+}: {
+  turn: InmobTurn;
+  onContinue?: () => void;
+  acknowledged?: boolean;
+}) {
   if (turn.status === "running") {
     return (
       <p role="status" aria-live="polite" className="mt-2 flex items-center gap-1.5 text-xs text-text-2">
@@ -160,10 +203,20 @@ function TurnStatus({ turn }: { turn: InmobTurn }) {
   }
   if (turn.status === "uncertain") {
     return (
-      <p role="alert" className="mt-2 flex max-w-xl items-start gap-1.5 rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs leading-5 text-warning-text">
+      <div role="alert" className="mt-2 flex max-w-xl items-start gap-1.5 rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs leading-5 text-warning-text">
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        {friendlyError(turn.errorCode)}
-      </p>
+        <div>
+          <p>{friendlyError(turn.errorCode)}</p>
+          {onContinue && !acknowledged && (
+            <Button type="button" size="sm" variant="outline" className="mt-2" onClick={onContinue}>
+              Continuar con otra consulta
+            </Button>
+          )}
+          {onContinue && acknowledged && (
+            <p className="mt-2 font-medium">Puedes continuar, pero no vuelvas a enviar esta solicitud.</p>
+          )}
+        </div>
+      </div>
     );
   }
   if (turn.status === "failed") {
@@ -216,11 +269,15 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<RecoveryDraft | null>(null);
+  const [persistedUncertainId, setPersistedUncertainId] = useState<string | null>(null);
+  const [acknowledgedUncertainId, setAcknowledgedUncertainId] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const sequence = useRef(0);
+  const lifecycle = useRef(0);
   const endRef = useRef<HTMLDivElement>(null);
 
   const readHistory = useCallback(async (initial = false) => {
+    const lifecycleId = lifecycle.current;
     const requestSequence = ++sequence.current;
     if (initial) setLoading(true);
     else setRefreshing(true);
@@ -228,50 +285,96 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
     try {
       const response = await fetch(`/api/inmob/chats/${agent}`, { cache: "no-store" });
       const body = (await response.json().catch(() => null)) as InmobChat | null;
-      if (requestSequence !== sequence.current) return;
+      if (requestSequence !== sequence.current || lifecycleId !== lifecycle.current) return;
       if (!response.ok || !body || body.agent !== agent || !Array.isArray(body.turns)) {
         throw new Error("history_unavailable");
       }
       const serverTurns = body.turns;
+      const saved = readRecovery(body.chatId);
+      const savedTurn = saved
+        ? serverTurns.find((turn) => turn.requestId === saved.requestId) ?? null
+        : null;
+      const latestUncertain = [...serverTurns].reverse().find((turn) => turn.status === "uncertain");
       setChat(body);
       setTurns((current) => {
         const byId = new Map(serverTurns.map((turn) => [turn.requestId, turn]));
-        // Conserva de forma visible un envío local cuya respuesta pudo perderse,
-        // incluso si el GET todavía no lo alcanza a ver.
         const combined = serverTurns.map((turn) => {
           const previous = current.find((item) => item.requestId === turn.requestId);
+          // El GET reemplaza el estado local del envío que se está recuperando.
+          // Para los demás turnos, una respuesta vieja no puede hacer retroceder
+          // un estado final a running.
+          if (saved?.requestId === turn.requestId) {
+            if (previous && previous.status !== "running" && turn.status === "running") return previous;
+            return turn;
+          }
           return previous && previous.status !== "running" ? previous : turn;
         });
         for (const turn of current) {
-          if (!byId.has(turn.requestId) && turn.status !== "completed") combined.push(turn);
+          const absentRecovery = saved?.requestId === turn.requestId &&
+            (saved.state === "rejected" || saved.state === "not_persisted");
+          if (!byId.has(turn.requestId) && turn.status !== "completed" && !absentRecovery) combined.push(turn);
+        }
+        if (saved && !savedTurn && (saved.state === "uncertain" || saved.state === "pending")) {
+          const existingIndex = combined.findIndex((turn) => turn.requestId === saved.requestId);
+          if (existingIndex >= 0) {
+            combined[existingIndex] = {
+              ...combined[existingIndex],
+              status: "uncertain",
+              errorCode: "network_uncertain",
+            };
+          } else {
+            combined.push({
+              requestId: saved.requestId,
+              message: saved.message,
+              reply: null,
+              status: "uncertain",
+              errorCode: "network_uncertain",
+              results: [],
+              createdAt: saved.createdAt,
+            });
+          }
         }
         return combined.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       });
-      const saved = readRecovery(body.chatId);
-      const recovered = saved && serverTurns.some((turn) => turn.requestId === saved.requestId);
-      if (saved && recovered) {
-        writeRecovery(body.chatId, null);
-        setRecovery(null);
+      setPersistedUncertainId(latestUncertain?.requestId ?? null);
+      if (saved && savedTurn) {
+        if (savedTurn.status === "running") {
+          const pending = { ...saved, state: "pending" as const };
+          writeRecovery(body.chatId, pending);
+          setRecovery(pending);
+        } else {
+          writeRecovery(body.chatId, null);
+          setRecovery(null);
+          writeDraft(body.chatId, "");
+          setDraft((current) => current === saved.message ? "" : current);
+          setRequestError(null);
+        }
       } else if (saved) {
-        setRecovery(saved);
-        setTurns((current) => mergeTurn(current, {
-          requestId: saved.requestId,
-          message: saved.message,
-          reply: null,
-          status: "uncertain",
-          errorCode: "network_uncertain",
-          results: [],
-          createdAt: saved.createdAt,
-        }));
+        if (saved.state === "rejected" || saved.state === "not_persisted") {
+          const safeToResubmit = { ...saved, state: "not_persisted" as const };
+          writeRecovery(body.chatId, safeToResubmit);
+          setRecovery(safeToResubmit);
+          setDraft(saved.message);
+          writeDraft(body.chatId, saved.message);
+          setRequestError("El servidor no guardó este mensaje. Revísalo y envíalo cuando quieras.");
+        } else {
+          const uncertain = { ...saved, state: "uncertain" as const };
+          writeRecovery(body.chatId, uncertain);
+          setRecovery(uncertain);
+          writeDraft(body.chatId, "");
+          setDraft("");
+          setRequestError("Aún no encontramos una respuesta para este envío. Sigue incierto; consulta el estado de nuevo.");
+        }
       } else {
         setRecovery(null);
+        setDraft(readDraft(body.chatId));
       }
     } catch {
-      if (requestSequence === sequence.current) {
+      if (requestSequence === sequence.current && lifecycleId === lifecycle.current) {
         setLoadError("No se pudo cargar la conversación. Revisa tu conexión e inténtalo de nuevo.");
       }
     } finally {
-      if (requestSequence === sequence.current) {
+      if (requestSequence === sequence.current && lifecycleId === lifecycle.current) {
         setLoading(false);
         setRefreshing(false);
       }
@@ -279,9 +382,11 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   }, [agent]);
 
   useEffect(() => {
+    lifecycle.current++;
     void readHistory(true);
     return () => {
       sequence.current++;
+      lifecycle.current++;
     };
   }, [readHistory]);
 
@@ -290,21 +395,38 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   }, [turns, submitting]);
 
   const hasRunning = turns.some((turn) => turn.status === "running");
-  const canSend = Boolean(draft.trim()) && draft.length <= 4000 && !loading && !submitting && !hasRunning && Boolean(chat);
+  const recoveryBlocksSend = Boolean(recovery && recovery.state !== "not_persisted");
+  const needsAcknowledgement = Boolean(
+    persistedUncertainId && acknowledgedUncertainId !== persistedUncertainId
+  );
+  const repeatsUncertain = turns.some(
+    (turn) => turn.status === "uncertain" && turn.message === draft.trim()
+  );
+  const canSend = Boolean(draft.trim()) && draft.length <= 4000 && !loading && !submitting && !hasRunning && !recoveryBlocksSend && !needsAcknowledgement && !repeatsUncertain && Boolean(chat);
   const needsRefresh = hasRunning || turns.some((turn) => turn.status === "uncertain") || Boolean(recovery);
 
   async function submit(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     const message = draft.trim();
-    if (!chat || !message || message.length > 4000 || submittingRef.current || hasRunning) return;
+    if (
+      !chat || !message || message.length > 4000 || submittingRef.current || hasRunning ||
+      (recovery && recovery.state !== "not_persisted") ||
+      (persistedUncertainId && acknowledgedUncertainId !== persistedUncertainId)
+    ) return;
+    if (turns.some((turn) => turn.status === "uncertain" && turn.message === message)) {
+      setRequestError("Esta solicitud sigue incierta. No la vuelvas a enviar; consulta el estado antes de continuar.");
+      return;
+    }
 
-    const priorUncertain = [...turns].reverse().find(
-      (turn) => turn.status === "uncertain" && turn.message === message
-    );
-    const pending: RecoveryDraft = priorUncertain
-      ? { requestId: priorUncertain.requestId, message, createdAt: priorUncertain.createdAt }
-      : { requestId: newRequestId(), message, createdAt: new Date().toISOString() };
+    const lifecycleId = lifecycle.current;
+    const pending: RecoveryDraft = recovery?.state === "not_persisted" && recovery.message === message
+      ? recovery
+      : { requestId: newRequestId(), message, createdAt: new Date().toISOString(), state: "pending" };
+    if (recovery?.state === "not_persisted" && recovery.message !== message) {
+      writeRecovery(chat.chatId, null);
+    }
     writeRecovery(chat.chatId, pending);
+    writeDraft(chat.chatId, "");
     setRecovery(pending);
     setRequestError(null);
     setDraft("");
@@ -331,6 +453,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         errorCode?: string;
         error?: { code?: string; message?: string };
       } | null;
+      if (lifecycleId !== lifecycle.current) return;
       if (
         body?.turn &&
         body.chatId === chat.chatId &&
@@ -338,9 +461,18 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         body.turn.requestId === pending.requestId
       ) {
         setTurns((current) => mergeTurn(current, body.turn!));
-        if (body.turn.status !== "running") {
+        if (body.turn.status === "running") {
+          const running = { ...pending, state: "pending" as const };
+          writeRecovery(chat.chatId, running);
+          setRecovery(running);
+        } else if (body.turn.status === "uncertain") {
+          const uncertain = { ...pending, state: "uncertain" as const };
+          writeRecovery(chat.chatId, uncertain);
+          setRecovery(uncertain);
+        } else {
           writeRecovery(chat.chatId, null);
           setRecovery(null);
+          writeDraft(chat.chatId, "");
         }
         if (body.turn.status === "failed" || body.turn.status === "uncertain") {
           setRequestError(friendlyError(body.turn.errorCode));
@@ -350,23 +482,20 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
 
       if (!response.ok) {
         const code = body?.errorCode ?? body?.error?.code ?? "send_failed";
-        const knownFailure: InmobTurn = {
-          ...pending,
-          reply: null,
-          status: "failed",
-          errorCode: code,
-          results: [],
-        };
-        setTurns((current) => mergeTurn(current, knownFailure));
-        writeRecovery(chat.chatId, null);
-        setRecovery(null);
-        setRequestError(friendlyError(code));
+        const rejected = { ...pending, state: "rejected" as const };
+        writeRecovery(chat.chatId, rejected);
+        writeDraft(chat.chatId, message);
+        setRecovery(rejected);
+        setTurns((current) => current.filter((turn) => turn.requestId !== pending.requestId));
+        setDraft(message);
+        setRequestError(`${friendlyError(code)} Consulta el estado antes de volver a enviarlo.`);
         return;
       }
 
       // Una respuesta sin el turno esperado no demuestra que el agente terminó.
       throw new Error("turn_missing");
     } catch {
+      if (lifecycleId !== lifecycle.current) return;
       const uncertain: InmobTurn = {
         ...pending,
         reply: null,
@@ -375,11 +504,15 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         results: [],
       };
       setTurns((current) => mergeTurn(current, uncertain));
-      setRecovery(pending);
+      const unresolved = { ...pending, state: "uncertain" as const };
+      writeRecovery(chat.chatId, unresolved);
+      setRecovery(unresolved);
       setRequestError(friendlyError("network_uncertain"));
     } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
+      if (lifecycleId === lifecycle.current) {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
     }
   }
 
@@ -420,7 +553,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={refreshing}
+                disabled={refreshing || submitting}
                 onClick={() => void readHistory(false)}
               >
                 {refreshing ? "Consultando…" : "Consultar estado"}
@@ -473,7 +606,18 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
                           <p className="text-text-2">No hay resultados para mostrar en esta respuesta.</p>
                         )}
                       </div>
-                      <TurnStatus turn={turn} />
+                      <TurnStatus
+                        turn={turn}
+                        onContinue={
+                          turn.requestId === persistedUncertainId
+                            ? () => {
+                                setAcknowledgedUncertainId(turn.requestId);
+                                setRequestError(null);
+                              }
+                            : undefined
+                        }
+                        acknowledged={turn.requestId === acknowledgedUncertainId}
+                      />
                     </div>
                   )}
                   {turn.status === "running" && !turn.reply && turn.results.length === 0 && (
@@ -484,7 +628,18 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
                         <span className="sr-only">{copy.title} está preparando una respuesta</span>
                         <span aria-hidden="true">Un momento…</span>
                       </div>
-                      <TurnStatus turn={turn} />
+                      <TurnStatus
+                        turn={turn}
+                        onContinue={
+                          turn.requestId === persistedUncertainId
+                            ? () => {
+                                setAcknowledgedUncertainId(turn.requestId);
+                                setRequestError(null);
+                              }
+                            : undefined
+                        }
+                        acknowledged={turn.requestId === acknowledgedUncertainId}
+                      />
                     </div>
                   )}
                 </li>
@@ -508,14 +663,23 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
               aria-label={`Mensaje para ${copy.title}`}
               value={draft}
               onChange={(event) => {
-                setDraft(event.target.value);
+                const next = event.target.value;
+                setDraft(next);
+                if (chat) writeDraft(chat.chatId, next);
+                if (chat && recovery?.state === "not_persisted" && next !== recovery.message) {
+                  writeRecovery(chat.chatId, null);
+                  setRecovery(null);
+                }
                 setRequestError(null);
               }}
               onKeyDown={onComposerKeyDown}
               placeholder={copy.hint}
               maxLength={4000}
               rows={2}
-              disabled={!chat || loading || submitting || hasRunning}
+              disabled={
+                !chat || loading || submitting || hasRunning ||
+                Boolean(recovery && recovery.state !== "not_persisted")
+              }
               className="min-h-[58px] resize-y border-0 bg-transparent px-2 py-1 shadow-none focus-visible:border-transparent focus-visible:ring-0"
             />
             <div className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t border-border px-1 pt-2">

@@ -8,7 +8,7 @@ on:
         options: [verify, core, red, ui-red]
         default: verify
   push:
-    branches: [codex/century-agentes-web]
+    branches: [codex/century-agentes-web, codex/liquid-glass]
 
 concurrency:
   group: inmob-pilot-${{ github.ref }}
@@ -50,6 +50,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: node scripts/e2e-inmob.mjs
+      - run: node scripts/e2e-liquid-glass.mjs
 
   verify:
     if: github.event_name == 'workflow_dispatch' && (inputs.phase == 'verify' || inputs.phase == 'core')
@@ -113,9 +114,21 @@ jobs:
         env:
           CHROME_PATH: /usr/bin/google-chrome
         run: node scripts/e2e-inmob.mjs
+      - name: Liquid glass browser material and accessibility
+        if: ${{ inputs.phase == 'verify' && matrix.config.inmob == 'on' && !cancelled() }}
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node scripts/e2e-liquid-glass.mjs
+      - name: Glass visual evidence
+        if: ${{ always() && inputs.phase == 'verify' && matrix.config.inmob == 'on' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: glass-visual-evidence
+          path: .tmp/glass-evidence/
+          retention-days: 3
 
   image:
-    if: github.event_name == 'workflow_dispatch' && inputs.phase == 'verify' && github.repository == 'camvar2001/vocero-crm' && github.ref == 'refs/heads/codex/century-agentes-web'
+    if: github.event_name == 'workflow_dispatch' && inputs.phase == 'verify' && github.repository == 'camvar2001/vocero-crm' && (github.ref == 'refs/heads/codex/century-agentes-web' || github.ref == 'refs/heads/codex/liquid-glass')
     permissions:
       contents: read
       packages: write

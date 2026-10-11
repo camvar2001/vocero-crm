@@ -562,7 +562,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
 
   return (
     <section aria-labelledby="inmob-chat-title" className="flex h-full min-h-0 flex-col bg-background">
-      <header className="shrink-0 border-b border-border bg-background px-4 py-4 sm:px-6 sm:py-5">
+      <header className="glass-bar shrink-0 border-b border-border bg-background px-4 py-4 sm:px-6 sm:py-5">
         <div className="mx-auto flex max-w-5xl items-center gap-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-brand-soft bg-brand-tint text-brand-text">
             {agent === "buscador" ? <Search className="h-5 w-5" aria-hidden="true" /> : <CalendarDays className="h-5 w-5" aria-hidden="true" />}
@@ -581,7 +581,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-chat-bg px-3 py-5 sm:px-6 sm:py-7">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-chat px-3 py-5 sm:px-6 sm:py-7">
         <div className="mx-auto flex min-h-full max-w-4xl flex-col">
           <div className="mb-5 flex items-center justify-between gap-3">
             <p className="kicker text-text-3">Historial de {copy.title}</p>
@@ -665,7 +665,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-border bg-background px-3 py-3 sm:px-6 sm:py-4">
+      <footer className="glass-bar shrink-0 border-t border-border bg-background px-3 py-3 sm:px-6 sm:py-4">
         <div className="mx-auto max-w-4xl">
           {repeatsUncertain && (
             <p role="alert" className="mb-2 text-xs leading-5 text-warning-text">No recibimos la confirmación de esta acción. Revisa si ya se guardó o escribe otra consulta.</p>
@@ -673,7 +673,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
           {requestError && <p role="alert" className="mb-2 text-xs leading-5 text-danger-text">{requestError}</p>}
           <form
             onSubmit={(event) => void submit(event)}
-            className="rounded-xl border border-border-strong bg-background p-2 shadow-sm transition-colors focus-within:border-brand-soft focus-within:ring-2 focus-within:ring-brand-soft sm:p-2.5"
+            className="glass-inset rounded-xl border border-border-strong bg-background p-2 shadow-sm transition-colors focus-within:border-brand-soft focus-within:ring-2 focus-within:ring-brand-soft sm:p-2.5"
           >
             <label className="sr-only" htmlFor={`inmob-message-${agent}`}>Mensaje para {copy.title}</label>
             <Textarea

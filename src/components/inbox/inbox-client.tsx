@@ -277,7 +277,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
           hilo en cuanto hay conversación elegida (patrón maestro-detalle). */}
       <section
         className={cn(
-          "w-full shrink-0 overflow-hidden border-r md:w-[300px] lg:w-[360px]",
+          "glass-bar w-full shrink-0 overflow-hidden border-r md:w-[300px] lg:w-[360px]",
           selected && "max-md:hidden"
         )}
       >
@@ -298,7 +298,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
       >
         {selected ? (
           <>
-            <header className="flex items-center justify-between gap-1 border-b bg-background px-2 py-2.5 md:px-4">
+            <header className="glass-bar flex items-center justify-between gap-1 border-b bg-background px-2 py-2.5 md:px-4">
               {/* Volver a la lista: en móvil el hilo ocupa toda la pantalla. */}
               <button
                 onClick={() => setSelectedId(null)}

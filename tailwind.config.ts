@@ -28,15 +28,15 @@ const config: Config = {
         // En claro es el acento; en oscuro, su variante aclarada: el acento
         // sólido queda bajo 3:1 sobre la fila seleccionada y los diálogos.
         ring: "var(--ring)",
-        background: "var(--bg)",
+        background: "var(--glass-bg)",
         foreground: "var(--text)",
-        subtle: "var(--bg-subtle)",
+        subtle: "var(--glass-subtle)",
         primary: {
           DEFAULT: "var(--accent)",
           foreground: "var(--accent-fg)",
         },
         secondary: {
-          DEFAULT: "var(--bg-panel)",
+          DEFAULT: "var(--glass-panel)",
           foreground: "var(--text-2)",
         },
         destructive: {
@@ -44,21 +44,21 @@ const config: Config = {
           foreground: "var(--danger-fg)",
         },
         muted: {
-          DEFAULT: "var(--bg-panel)",
+          DEFAULT: "var(--glass-panel)",
           foreground: "var(--text-3)",
         },
         accent: {
-          DEFAULT: "var(--bg-hover)",
+          DEFAULT: "var(--glass-hover)",
           foreground: "var(--text)",
         },
         card: {
-          DEFAULT: "var(--bg)",
+          DEFAULT: "var(--glass-bg)",
           foreground: "var(--text)",
         },
         // Lo que flota (diálogos, cajones, menús): en oscuro, un escalón
         // arriba de la página para que se despegue; en claro, el mismo blanco.
         popover: {
-          DEFAULT: "var(--bg-raised)",
+          DEFAULT: "var(--glass-raised)",
           foreground: "var(--text)",
         },
         brand: {
@@ -75,7 +75,7 @@ const config: Config = {
         "text-2": "var(--text-2)",
         "text-3": "var(--text-3)",
         "text-4": "var(--text-4)",
-        chat: "var(--chat-bg)",
+        chat: "var(--glass-chat)",
         "bubble-in": "var(--bubble-in)",
         "bubble-in-border": "var(--bubble-in-border)",
         "bubble-out": "var(--bubble-out)",
@@ -107,7 +107,7 @@ const config: Config = {
         },
         overlay: "var(--overlay)",
         knob: "var(--knob)",
-        chip: "var(--chip-bg)",
+        chip: "var(--glass-chip)",
         "row-hover": "var(--row-hover)",
       },
       borderRadius: {

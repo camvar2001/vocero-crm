@@ -15,7 +15,7 @@ export default async function AuthLayout({
   const branding = await getBranding().catch(() => DEFAULT_BRANDING);
   const vocero = isVoceroName(branding.name);
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-subtle p-4">
+    <main className="glass-auth glass-canvas relative flex min-h-screen items-center justify-center overflow-hidden p-4">
       <div className="brand-grid absolute inset-0" aria-hidden />
       <div className="brand-glow brand-glow-a" aria-hidden />
       <div className="brand-glow brand-glow-b" aria-hidden />

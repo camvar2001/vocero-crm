@@ -27,7 +27,7 @@
     --bg-raised: #ffffff;
     --text: #0a1730;
     --text-2: #42506b;
-    --text-3: #8391aa;
+    --text-3: #52637d;
     --text-4: #aab4c8;
     --border: #e8edf6;
     --border-strong: #dde5f1;
@@ -90,13 +90,37 @@
     --knob: #ffffff;
 
     /* Radios y sombras (las de la landing, con tinte azul marino) */
-    --radius-sm: 9px;
-    --radius: 12px;
-    --radius-lg: 16px;
+    --radius-sm: 12px;
+    --radius: 16px;
+    --radius-lg: 24px;
     --shadow-sm: 0 1px 2px rgba(8, 27, 82, 0.06);
     --shadow-md: 0 14px 40px -16px rgba(8, 27, 82, 0.16);
     --shadow-pop: 0 30px 80px -20px rgba(8, 27, 82, 0.22),
       0 8px 24px -12px rgba(8, 27, 82, 0.12);
+
+    /* Liquid glass: fallback opaco. Los neutros anteriores siguen siendo
+       la referencia de branding/contraste; solo cambia el material. */
+    --glass-bg: var(--bg);
+    --glass-subtle: var(--bg-subtle);
+    --glass-panel: var(--bg-panel);
+    --glass-hover: var(--bg-hover);
+    --glass-raised: var(--bg-raised);
+    --glass-chip: var(--chip-bg);
+    --glass-chat: var(--chat-bg);
+    --glass-sheet: var(--bg);
+    --glass-edge: rgba(255, 255, 255, 0.82);
+    --glass-reflection: rgba(255, 255, 255, 0.38);
+    --glass-shadow: 0 8px 28px -18px rgba(24, 50, 73, 0.2),
+      inset 0 1px 0 var(--glass-edge);
+    --glass-blur: 24px;
+    --glass-bar-blur: 20px;
+    --glass-pop-blur: 32px;
+    --glass-saturation: 135%;
+    --canvas-base: #eaf0f5;
+    --canvas-light: rgba(255, 255, 255, 0.78);
+    --canvas-accent: 18%;
+    --canvas-cyan: rgba(88, 185, 191, 0.16);
+    --canvas-lilac: rgba(149, 153, 202, 0.14);
 
     /* Densidad de filas de conversación */
     --row-py: 11px;
@@ -178,6 +202,16 @@
     --overlay: rgba(2, 8, 24, 0.72);
     --knob: #dfe6fa;
 
+    --glass-edge: rgba(184, 211, 236, 0.24);
+    --glass-reflection: rgba(189, 214, 248, 0.07);
+    --glass-shadow: 0 12px 32px -18px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 var(--glass-edge);
+    --canvas-base: #111a2c;
+    --canvas-light: rgba(111, 154, 196, 0.06);
+    --canvas-accent: 15%;
+    --canvas-cyan: rgba(53, 135, 156, 0.14);
+    --canvas-lilac: rgba(104, 112, 187, 0.14);
+
     /* Sombras: sobre oscuro necesitan más negro para leerse */
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
     --shadow-md: 0 14px 40px -16px rgba(0, 0, 0, 0.6);
@@ -217,6 +251,16 @@
     --ring: var(--accent);
     --shadow-pop: 0 30px 80px -20px rgba(0, 0, 0, 0.75),
       0 8px 24px -12px rgba(0, 0, 0, 0.5);
+    /* Los custom properties con var() se resuelven donde se declaran:
+       redeclarar el material evita heredar vidrio claro dentro del nav. */
+    --glass-bg: var(--bg);
+    --glass-subtle: var(--bg-subtle);
+    --glass-panel: var(--bg-panel);
+    --glass-hover: var(--bg-hover);
+    --glass-raised: var(--bg-raised);
+    --glass-chip: var(--chip-bg);
+    --glass-edge: rgba(184, 211, 236, 0.16);
+    --glass-reflection: rgba(189, 214, 248, 0.07);
   }
 }
 
@@ -226,6 +270,7 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    background-color: var(--canvas-base);
     letter-spacing: -0.01em;
     text-rendering: optimizeLegibility;
   }
@@ -372,5 +417,198 @@
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+}
+
+/* El vidrio usa transparencia solo cuando el navegador puede difuminar lo
+   que queda detrás. Sin soporte permanece el fallback opaco de :root. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-bg: color-mix(in srgb, var(--bg) 64%, transparent);
+    --glass-subtle: color-mix(in srgb, var(--bg-subtle) 48%, transparent);
+    --glass-panel: color-mix(in srgb, var(--bg-panel) 74%, transparent);
+    --glass-hover: color-mix(in srgb, var(--bg-hover) 90%, transparent);
+    --glass-raised: color-mix(in srgb, var(--bg-raised) 92%, transparent);
+    --glass-chip: color-mix(in srgb, var(--chip-bg) 82%, transparent);
+    --glass-chat: color-mix(in srgb, var(--chat-bg) 38%, transparent);
+    --glass-sheet: color-mix(in srgb, var(--bg) 32%, transparent);
+  }
+  .nav-dark {
+    --glass-bg: color-mix(in srgb, var(--bg) 90%, transparent);
+    --glass-subtle: color-mix(in srgb, var(--bg-subtle) 88%, transparent);
+    --glass-panel: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+    --glass-hover: color-mix(in srgb, var(--bg-hover) 96%, transparent);
+    --glass-raised: color-mix(in srgb, var(--bg-raised) 96%, transparent);
+    --glass-chip: color-mix(in srgb, var(--chip-bg) 92%, transparent);
+  }
+  :root[data-theme="dark"] {
+    --glass-bg: color-mix(in srgb, var(--bg) 78%, transparent);
+    --glass-subtle: color-mix(in srgb, var(--bg-subtle) 62%, transparent);
+    --glass-raised: color-mix(in srgb, var(--bg-raised) 96%, transparent);
+  }
+}
+
+/* Halo estático: luz amplia, sin animar filtros ni depender de imágenes. */
+.glass-canvas {
+  background-color: var(--canvas-base);
+  background-image:
+    radial-gradient(ellipse at 42% -12%, var(--canvas-light), transparent 54%),
+    radial-gradient(ellipse at 4% 22%, color-mix(in srgb, var(--accent) var(--canvas-accent), transparent), transparent 55%),
+    radial-gradient(ellipse at 95% 8%, var(--canvas-cyan), transparent 48%),
+    radial-gradient(ellipse at 76% 96%, var(--canvas-lilac), transparent 55%);
+}
+.glass-app {
+  gap: 12px;
+  padding: 12px;
+}
+.glass-workspace {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--glass-shadow);
+}
+/* Un plano separado evita que backdrop-filter en main convierta los
+   diálogos fixed descendientes en elementos contenidos por el panel. */
+.glass-workspace::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--glass-sheet);
+  border-radius: inherit;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+}
+.glass-nav {
+  background-color: color-mix(in srgb, var(--bg-subtle) 88%, transparent);
+  background-image: linear-gradient(145deg, rgba(191, 224, 240, 0.09), transparent 40%, rgba(61, 146, 148, 0.04));
+  border: 1px solid rgba(184, 211, 236, 0.16);
+  box-shadow: 0 12px 32px -18px rgba(4, 14, 30, 0.4), inset 0 1px 0 rgba(205, 231, 246, 0.12);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+}
+.glass-nav-item {
+  min-height: 40px;
+  border: 1px solid transparent;
+  transition: color 200ms ease, background-color 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+}
+.glass-nav-item[aria-current="page"] {
+  border-color: color-mix(in srgb, var(--accent-text) 22%, transparent);
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 75%);
+  box-shadow: inset 0 1px 0 rgba(225, 246, 255, 0.12), 0 4px 12px -8px rgba(0, 0, 0, 0.4);
+}
+.glass-panel,
+.glass-bar,
+.glass-inset,
+.bg-popover {
+  background-image: linear-gradient(145deg, var(--glass-reflection), transparent 55%);
+}
+.glass-panel {
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+}
+.glass-bar {
+  -webkit-backdrop-filter: blur(var(--glass-bar-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-bar-blur)) saturate(var(--glass-saturation));
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+.bg-popover {
+  -webkit-backdrop-filter: blur(var(--glass-pop-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-pop-blur)) saturate(var(--glass-saturation));
+  box-shadow: var(--shadow-pop), inset 0 1px 0 var(--glass-edge);
+}
+.glass-inset {
+  box-shadow: inset 0 1px 2px rgba(18, 42, 69, 0.04), 0 1px 0 var(--glass-edge);
+}
+/* Texto editable transparente dentro del compositor conserva su material. */
+.glass-inset.bg-transparent {
+  background-image: none;
+  box-shadow: none;
+}
+.glass-button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.glass-button-primary {
+  background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  background-size: 100% 1px;
+  background-repeat: no-repeat;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), var(--shadow-sm);
+}
+.glass-button-secondary {
+  background-color: var(--glass-chip);
+  border: 1px solid var(--border-strong);
+  background-image: linear-gradient(145deg, var(--glass-reflection), transparent 65%);
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+.glass-button-secondary:hover {
+  background-color: var(--glass-hover);
+}
+/* Superficies densas comparten el plano difuminado de su contenedor. */
+.thread-bg {
+  background-color: var(--glass-chat);
+}
+.glass-auth .brand-grid {
+  opacity: 0.12;
+}
+.glass-auth .brand-glow {
+  animation: none;
+}
+
+@media (min-width: 1024px) {
+  .glass-nav {
+    border-radius: var(--radius-lg);
+  }
+}
+@media (max-width: 1023px) {
+  .glass-app {
+    padding: 0;
+    gap: 0;
+  }
+  .glass-workspace {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .glass-nav-item {
+    min-height: 44px;
+  }
+}
+@media (max-width: 767px) {
+  .glass-button {
+    min-height: 44px;
+  }
+  .glass-button.w-9 {
+    min-width: 44px;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-nav {
+    background-color: var(--bg-subtle);
+  }
+}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :root, :root[data-theme="dark"], .nav-dark {
+    --glass-bg: var(--bg);
+    --glass-subtle: var(--bg-subtle);
+    --glass-panel: var(--bg-panel);
+    --glass-hover: var(--bg-hover);
+    --glass-raised: var(--bg-raised);
+    --glass-chip: var(--chip-bg);
+    --glass-chat: var(--chat-bg);
+    --glass-sheet: var(--bg);
+  }
+  .glass-panel, .glass-bar, .bg-popover, .glass-nav, .glass-workspace::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-image: none;
+  }
+  .glass-nav {
+    background-color: var(--bg-subtle);
   }
 }

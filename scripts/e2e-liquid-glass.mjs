@@ -93,7 +93,7 @@ function pixel(png){
  if(kind==='IHDR')type=png[offset+17];
  if(kind==='IDAT')chunks.push(png.subarray(offset+8,offset+8+n));offset+=n+12;}
  const data=inflateSync(Buffer.concat(chunks));
- if(![2,6].includes(type)||data[0]!==0)throw Error('Unsupported one-pixel screenshot format');
+ if(![2,6].includes(type)||data[0]>4)throw Error('Unsupported one-pixel screenshot format');
  return [...data.subarray(1,4)];
 }
 function lum(rgb){const s=rgb.map(v=>{const n=v/255;return n<=0.04045?n/12.92:((n+0.055)/1.055)**2.4});return s[0]*.2126+s[1]*.7152+s[2]*.0722}

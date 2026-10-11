@@ -228,7 +228,7 @@ export function Composer({
 
   if (!conversation.windowOpen && conversation.channel === "whatsapp") {
     return (
-      <div className="border-t bg-background px-[18px] py-3.5">
+      <div className="glass-bar border-t bg-background px-[18px] py-3.5">
         <div className="mb-3 flex items-start gap-2 rounded-md border border-warning-soft bg-warning-tint p-3 text-sm text-warning-text">
           <Clock3 className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.7} />
           <div>
@@ -252,7 +252,7 @@ export function Composer({
     (file !== null || text.trim().length > 0) && !telegramTooLong;
 
   return (
-    <div className="border-t bg-background px-[18px] pb-3.5 pt-3">
+    <div className="glass-bar border-t bg-background px-[18px] pb-3.5 pt-3">
       {templates.length > 0 && !telegram && !file && panel === null && (
         <div className="mb-2.5 flex flex-wrap gap-1.5">
           {templates.slice(0, 4).map((t) => (
@@ -376,7 +376,7 @@ export function Composer({
       )}
 
       {/* La caja de escritura en píldora, como la del mockup de la landing */}
-      <div className="flex items-end gap-2 rounded-[23px] border border-border-strong bg-background py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft">
+      <div className="glass-inset flex items-end gap-2 rounded-[23px] border border-border-strong bg-background py-1.5 pl-2 pr-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft">
         <input
           ref={fileRef}
           type="file"

@@ -62,7 +62,7 @@ export function AppShell({
   }, [navOpen]);
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background">
+    <div className="glass-app glass-canvas flex h-dvh overflow-hidden">
       {navOpen && (
         <button
           aria-label="Cerrar el menú"
@@ -87,7 +87,7 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Misma pieza que la barra lateral (`nav-dark`): en el teléfono la
             franja azul marino de arriba es lo que queda del bicolor. */}
-        <header className="nav-dark flex h-12 shrink-0 items-center gap-1.5 border-b bg-subtle px-2 text-foreground lg:hidden">
+        <header className="nav-dark glass-nav flex h-14 shrink-0 items-center gap-1.5 border-b bg-subtle px-2 text-foreground lg:hidden">
           <button
             onClick={() => setNavOpen(true)}
             aria-label="Abrir el menú"
@@ -99,7 +99,7 @@ export function AppShell({
           <BrandLogo branding={branding} className="min-w-0" />
         </header>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
+        <main className="glass-workspace min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
       </div>
     </div>
   );

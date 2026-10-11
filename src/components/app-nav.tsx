@@ -70,7 +70,7 @@ const INMOB_ITEMS: NavItem[] = [
  */
 export function navItemClass(active: boolean) {
   return cn(
-    "flex items-center gap-[10px] rounded-sm px-2.5 py-2.5 text-[13.5px] font-semibold transition-colors lg:py-2",
+    "glass-nav-item flex items-center gap-[10px] rounded-sm px-2.5 py-2.5 text-[13.5px] font-semibold transition-colors lg:py-2",
     // Acento sólido: dentro de `.nav-dark` es el calculado para fondo oscuro,
     // así que contrasta con la barra (≥ 3.5:1) sea cual sea el white-label.
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -160,7 +160,7 @@ export function AppNav({
         // nombre del usuario, el nombre white-label en BrandLogo) hereda el
         // color YA CALCULADO en <body> con el tema de la página, no el de
         // `.nav-dark` — y un texto oscuro sobre este fondo oscuro se pierde.
-        "nav-dark fixed inset-y-0 left-0 z-50 flex w-[17rem] shrink-0 flex-col overflow-y-auto border-r bg-subtle px-3 pb-3.5 pt-4 text-foreground transition-[transform,visibility] duration-200",
+        "nav-dark glass-nav fixed inset-y-0 left-0 z-50 flex w-[17rem] shrink-0 flex-col overflow-y-auto border-r bg-subtle px-3 pb-3.5 pt-4 text-foreground transition-[transform,visibility] duration-200",
         "lg:static lg:visible lg:z-auto lg:w-56 lg:translate-x-0 lg:overflow-visible lg:transition-none",
         open ? "visible translate-x-0 shadow-pop" : "invisible -translate-x-full"
       )}
@@ -187,7 +187,7 @@ export function AppNav({
           const active =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
-            <Link key={item.href} href={item.href} className={navItemClass(active)}>
+            <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={navItemClass(active)}>
               <item.icon
                 className={cn("h-[17px] w-[17px]", active ? "text-brand" : "text-text-3")}
                 strokeWidth={1.8}
@@ -205,7 +205,7 @@ export function AppNav({
 
       <div className="flex-1" />
 
-      <Link href="/settings" className={navItemClass(settingsActive)}>
+      <Link href="/settings" aria-current={settingsActive ? "page" : undefined} className={navItemClass(settingsActive)}>
         <Settings
           className={cn("h-[17px] w-[17px]", settingsActive ? "text-brand" : "text-text-3")}
           strokeWidth={1.8}

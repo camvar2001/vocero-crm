@@ -17,3 +17,7 @@ Login/registro, sidebar/barra móvil, bandeja/hilo/compositor, Pipeline, Calenda
 ## Movimiento, soporte y responsive
 
 Transiciones 180–220ms de color/sombra, sin animar blur. Respetar reduced-motion; superficie opaca para reduced-transparency, forced-colors y navegadores sin backdrop-filter. Móvil sin margen externo innecesario; escritorio marco de 12px y paneles flotantes. Revisar 375/768/1440px, foco y composición de capas sticky.
+
+## Enmienda oficial isIA — mismo día
+
+Identidad visual elegida por el propietario: isIA v1.1 «cubo neuronal». Cian operativo #007A80, grafito #14181F, cobre #C9622E, cielo #ECF9F9; oscuro #0D1016 y cianclaro #67BDC1. Fondo glass con luz cielo/cian y un toque cobre. Albert Sans para UI, Archivo para títulos, IBM Plex Mono para datos, desde archivos oficiales locales. Logo completo >=96px (sidebar/login), icono32px en barra móvil; usar variantes oficiales sin filtros/sombras/distorsión sobre el logo. Marca genérica preservada para nombres distintos de isIA.

@@ -4,6 +4,7 @@ import {
   BRAND_MARK_STROKE,
   BRAND_MARK_TAIL,
   isVoceroName,
+  isIsiaName,
 } from "./brand";
 import { resolveAccentSet, type Branding } from "./branding";
 
@@ -159,5 +160,8 @@ export function faviconCacheKey(
 export function faviconHref(
   branding: Pick<Branding, "name" | "accent" | "favicon">
 ): string {
+  if (isIsiaName(branding.name) && !branding.favicon) {
+    return "/branding/isia/icon.svg?v=neuronal-v1";
+  }
   return `/api/branding/favicon?v=${faviconCacheKey(branding)}`;
 }

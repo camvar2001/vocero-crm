@@ -96,7 +96,7 @@ export function AppShell({
           >
             <Menu className="h-5 w-5" strokeWidth={1.8} />
           </button>
-          <BrandLogo branding={branding} className="min-w-0" />
+          <BrandLogo branding={branding} compact className="min-w-0" />
         </header>
 
         <main className="glass-workspace min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>

@@ -33,11 +33,12 @@ import {Textarea} from '@/components/ui/textarea';
 import {InmobChatClient} from '@/components/inmob/chat-client';
 import {DEFAULT_BRANDING,accentCssVariables} from '@/lib/branding';
 const theme = new URLSearchParams(location.search).get('theme') || 'light';
-const brand = {...DEFAULT_BRANDING, accent:'#286457'};
+const brand = {...DEFAULT_BRANDING, name:'isIA', accent:'#007A80'};
 const style = document.createElement('style');
 style.textContent = accentCssVariables(brand.accent);
  document.head.append(style);
  document.documentElement.dataset.theme = theme;
+ document.documentElement.dataset.brand = 'isia';
 function Page() {
  const path = usePathname();
  const [dialog,setDialog]=useState(false);
@@ -67,13 +68,25 @@ const bundle = await build({
       args.path==='next/navigation'?navigation:args.path==='next/link'?link:args.path.includes('use-events')?'export function useEvents(){}':'export async function signOut(){}'}));
   }}],
 });
+const fontCss = `
+@font-face{font-family:'Albert Sans';src:url('/fonts/AlbertSans.ttf');font-weight:100 900;font-display:swap}
+@font-face{font-family:'Archivo';src:url('/fonts/Archivo.ttf');font-weight:100 900;font-display:swap}
+@font-face{font-family:'IBM Plex Mono';src:url('/fonts/IBMPlexMono-Regular.ttf');font-weight:400;font-display:swap}
+:root{--font-sans:'Albert Sans';--font-display:'Archivo';--font-mono:'IBM Plex Mono'}
+`;
 const css = (await postcss([tailwind({config:join(root,'tailwind.config.ts'),content:[join(root,'src/**/*.{ts,tsx}'),{raw:source,extension:'tsx'}]}),autoprefixer()])
-  .process(readFileSync(join(root,'src/app/globals.css'),'utf8'),{from:join(root,'src/app/globals.css')})).css;
+  .process(readFileSync(join(root,'src/app/globals.css'),'utf8'),{from:join(root,'src/app/globals.css')})).css + fontCss;
 const fallbackTree = postcss.parse(css);
 fallbackTree.walkAtRules('supports',rule=>{if(rule.params.includes('backdrop-filter'))rule.remove()});
 const fallback = fallbackTree.toString();
 const server = createServer((req,res)=>{
  const url = new URL(req.url,'http://127.0.0.1');
+ if(['/branding/isia/logo-light.svg','/branding/isia/logo-dark.svg','/branding/isia/icon.svg'].includes(url.pathname)){
+  res.setHeader('content-type','image/svg+xml');res.end(readFileSync(join(root,'public',url.pathname)));return;
+ }
+ if(['/fonts/AlbertSans.ttf','/fonts/Archivo.ttf','/fonts/IBMPlexMono-Regular.ttf'].includes(url.pathname)){
+  res.setHeader('content-type','font/ttf');res.end(readFileSync(join(root,'src/app',url.pathname)));return;
+ }
  if(url.pathname==='/bundle.js'){res.setHeader('content-type','text/javascript');res.end(bundle.outputFiles[0].contents);return}
  if(url.pathname==='/style.css'){res.setHeader('content-type','text/css');res.end(url.searchParams.has('fallback')?fallback:css);return}
  if(url.pathname==='/api/conversations'){res.setHeader('content-type','application/json');res.end('{"conversations":[]}');return}
@@ -86,28 +99,54 @@ await new Promise(done=>server.listen(0,'127.0.0.1',done));
 const base = 'http://127.0.0.1:'+server.address().port;
 let browser;
 // Browser screenshots provide the composited surface pixel, including the
-// real gradient/alpha layers. This avoids pretending a CSS hex tests glass.
-function pixel(png){
- let offset=8;const chunks=[];let type;
- while(offset<png.length){const n=png.readUInt32BE(offset),kind=png.toString('ascii',offset+4,offset+8);
- if(kind==='IHDR')type=png[offset+17];
- if(kind==='IDAT')chunks.push(png.subarray(offset+8,offset+8+n));offset+=n+12;}
- const data=inflateSync(Buffer.concat(chunks));
- if(![2,6].includes(type)||data[0]>4)throw Error('Unsupported one-pixel screenshot format');
- return [...data.subarray(1,4)];
+// real gradient/alpha layers. A full viewport avoids clipped screenshots
+// changing how Chromium paints the backdrop-filter kernel.
+function pixel(png, x, y) {
+ let offset=8, width, type; const chunks=[];
+ while(offset<png.length){
+  const size=png.readUInt32BE(offset), kind=png.toString('ascii',offset+4,offset+8);
+  if(kind==='IHDR'){width=png.readUInt32BE(offset+8);type=png[offset+17];}
+  if(kind==='IDAT')chunks.push(png.subarray(offset+8,offset+8+size));
+  offset+=size+12;
+ }
+ if(![2,6].includes(type))throw Error('Unsupported screenshot color type');
+ const channels=type===6?4:3, stride=width*channels;
+ const bytes=inflateSync(Buffer.concat(chunks)); let prev=Buffer.alloc(stride);
+ for(let rowIndex=0;rowIndex<=y;rowIndex++){
+  const at=rowIndex*(stride+1), filter=bytes[at];
+  const row=Buffer.from(bytes.subarray(at+1,at+1+stride));
+  for(let i=0;i<stride;i++){
+   const a=i>=channels?row[i-channels]:0,b=prev[i],c=i>=channels?prev[i-channels]:0;
+   let value=0;
+   if(filter===1)value=a;
+   else if(filter===2)value=b;
+   else if(filter===3)value=Math.floor((a+b)/2);
+   else if(filter===4){const q=a+b-c,da=Math.abs(q-a),db=Math.abs(q-b),dc=Math.abs(q-c);value=da<=db&&da<=dc?a:db<=dc?b:c;}
+   row[i]=(row[i]+value)&255;
+  }
+  if(rowIndex===y)return [...row.subarray(x*channels,x*channels+3)];
+  prev=row;
+ }
 }
 function lum(rgb){const s=rgb.map(v=>{const n=v/255;return n<=0.04045?n/12.92:((n+0.055)/1.055)**2.4});return s[0]*.2126+s[1]*.7152+s[2]*.0722}
 function contrast(a,b){const x=lum(a),y=lum(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
 async function textRgb(page,selector){return page.locator(selector).first().evaluate(el=>{
  const c=document.createElement('canvas').getContext('2d');c.fillStyle=getComputedStyle(el).color;c.fillRect(0,0,1,1);return [...c.getImageData(0,0,1,1).data].slice(0,3);
 })}
-async function sample(page,selector){const box=await page.locator(selector).first().boundingBox();return pixel(await page.screenshot({clip:{x:Math.floor(box.x+8),y:Math.floor(box.y+8),width:1,height:1}}))}
+async function sample(page,selector){const box=await page.locator(selector).first().boundingBox();return pixel(await page.screenshot(),Math.floor(box.x+40),Math.floor(box.y+12))}
 try{
  browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
  const context=await browser.newContext({viewport:{width:1440,height:900}});
  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
  for(const theme of ['light','dark']){
   await page.goto(base+'/?theme='+theme);await page.getByRole('heading',{name:'Tu espacio, con otra luz.'}).waitFor();
+  await page.evaluate(()=>document.fonts.ready);
+  const logo=page.getByRole('img',{name:'isIA',exact:true});
+  ok(theme+' official full logo visible',await logo.isVisible());
+  const logoSize=await logo.boundingBox();ok(theme+' full logo minimum96px',logoSize.width>=96);
+  const logoPath=await logo.getAttribute('src');ok(theme+' navy sidebar uses official dark variant',logoPath==='/branding/isia/logo-dark.svg');
+  const palette=await page.evaluate(()=>({accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),sky:getComputedStyle(document.documentElement).getPropertyValue('--isia-sky').trim()}));
+  ok(theme+' official palette preserved',palette.sky==='#ecf9f9'&&(theme==='dark'||palette.accent==='#007a80'),JSON.stringify(palette));
   const card=page.getByTestId('material-card');
   const material=await card.evaluate(el=>{const c=getComputedStyle(el);return{blur:c.backdropFilter||c.webkitBackdropFilter,bg:c.backgroundColor,filter:c.filter,radius:c.borderRadius}});
   ok(theme+' panel has visible background blur',/blur\((?:2\d|3\d)px\)/.test(material.blur),JSON.stringify(material));
@@ -139,9 +178,11 @@ try{
    ok(theme+' '+width+' composer visible',await page.getByRole('button',{name:'Enviar',exact:true}).isVisible());
    if(width<1024){
     await page.getByRole('button',{name:'Abrir el menú'}).click();
+    await page.getByRole('link',{name:'Pipeline',exact:true}).waitFor({state:'visible'});
     ok(theme+' '+width+' mobile navigation visible',await page.getByRole('link',{name:'Pipeline',exact:true}).isVisible());
     await page.getByRole('link',{name:'Pipeline',exact:true}).click();
     await page.getByRole('heading',{name:'Tu espacio, con otra luz.'}).waitFor();
+    await page.getByRole('link',{name:'Pipeline',exact:true}).waitFor({state:'hidden'});
     ok(theme+' '+width+' navigation closes after route',!await page.getByRole('link',{name:'Pipeline',exact:true}).isVisible());
     await page.getByRole('button',{name:'Abrir el menú'}).click();await page.getByRole('link',{name:'Buscador',exact:true}).click();
     await page.getByLabel('Mensaje para Buscador').waitFor();

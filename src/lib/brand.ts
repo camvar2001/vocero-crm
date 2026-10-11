@@ -36,3 +36,8 @@ export const BRAND_CYAN_ON_TILE = "#3fdcff";
 export function isVoceroName(name: string): boolean {
   return name.trim().toLowerCase() === "vocero";
 }
+
+/** Identidad oficial del propietario; las demás marcas conservan white-label. */
+export function isIsiaName(name: string): boolean {
+  return name.trim().toLowerCase() === "isia";
+}

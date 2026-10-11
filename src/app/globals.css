@@ -120,7 +120,7 @@
     --canvas-light: rgba(255, 255, 255, 0.78);
     --canvas-accent: 18%;
     --canvas-cyan: rgba(88, 185, 191, 0.16);
-    --canvas-lilac: rgba(149, 153, 202, 0.14);
+    --canvas-warm: rgba(149, 153, 202, 0.14);
 
     /* Densidad de filas de conversación */
     --row-py: 11px;
@@ -210,7 +210,7 @@
     --canvas-light: rgba(111, 154, 196, 0.06);
     --canvas-accent: 15%;
     --canvas-cyan: rgba(53, 135, 156, 0.14);
-    --canvas-lilac: rgba(104, 112, 187, 0.14);
+    --canvas-warm: rgba(104, 112, 187, 0.14);
 
     /* Sombras: sobre oscuro necesitan más negro para leerse */
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
@@ -455,7 +455,7 @@
     radial-gradient(ellipse at 42% -12%, var(--canvas-light), transparent 54%),
     radial-gradient(ellipse at 4% 22%, color-mix(in srgb, var(--accent) var(--canvas-accent), transparent), transparent 55%),
     radial-gradient(ellipse at 95% 8%, var(--canvas-cyan), transparent 48%),
-    radial-gradient(ellipse at 76% 96%, var(--canvas-lilac), transparent 55%);
+    radial-gradient(ellipse at 76% 96%, var(--canvas-warm), transparent 55%);
 }
 .glass-app {
   gap: 12px;
@@ -611,4 +611,85 @@
   .glass-nav {
     background-color: var(--bg-subtle);
   }
+}
+
+/* Paleta oficial isIA, aislada de los valores del CRM genérico. El acento
+   sigue llegando de Configuración → Marca; la instalación elige #007A80. */
+:root[data-brand="isia"] {
+  --isia-cyan: #007a80;
+  --isia-cyan-light: #67bdc1;
+  --isia-copper: #c9622e;
+  --isia-graphite: #14181f;
+  --isia-sky: #ecf9f9;
+  --isia-dark: #0d1016;
+  --bg-subtle: var(--isia-sky);
+  --bg-panel: #e0efef;
+  --bg-hover: #d7eaea;
+  --text: var(--isia-graphite);
+  --text-2: #3c4049;
+  --text-3: #556369;
+  --text-4: #75818a;
+  --border: #cfe6e6;
+  --border-strong: #b5d6d7;
+  --chat-bg: var(--isia-sky);
+  --cal-off: #e5f3f3;
+  --canvas-base: var(--isia-sky);
+  --canvas-light: rgba(255, 255, 255, 0.82);
+  --canvas-cyan: rgba(103, 189, 193, 0.18);
+  --canvas-warm: rgba(201, 98, 46, 0.09);
+  --canvas-accent: 14%;
+  --glass-edge: rgba(255, 255, 255, 0.86);
+}
+:root[data-brand="isia"][data-theme="dark"] {
+  --bg-subtle: #10151c;
+  --bg: #19232a;
+  --row-hover: #213039;
+  --bg-raised: #26333b;
+  --chip-bg: #2b3d45;
+  --bg-panel: #30434b;
+  --bg-hover: #354c55;
+  --text: #f3f8f7;
+  --text-2: #c4d5d4;
+  --text-3: #aac1c0;
+  --text-4: #8aaba9;
+  --border: #3c5a60;
+  --border-strong: #50777b;
+  --chat-bg: #10151c;
+  --cal-off: #10151c;
+  --canvas-base: var(--isia-dark);
+  --canvas-light: rgba(103, 189, 193, 0.06);
+  --canvas-cyan: rgba(0, 122, 128, 0.13);
+  --canvas-warm: rgba(201, 98, 46, 0.08);
+  --glass-edge: rgba(103, 189, 193, 0.22);
+}
+:root[data-brand="isia"] .nav-dark {
+  --bg: #14181f;
+  --bg-subtle: #0d1016;
+  --bg-panel: #1b292e;
+  --bg-raised: #1b292e;
+  --bg-hover: #21363b;
+  --text: #f3f8f7;
+  --text-2: #bacfce;
+  --text-3: #98b3b3;
+  --text-4: #789798;
+  --border: #2e484c;
+  --border-strong: #42636a;
+  --chip-bg: #1b292e;
+  --row-hover: #1a262c;
+}
+:root[data-brand="isia"] h1,
+:root[data-brand="isia"] h2,
+:root[data-brand="isia"] h3 {
+  font-family: var(--font-display), "Archivo", system-ui, sans-serif;
+}
+.isia-logo-dark {
+  display: none;
+}
+:root[data-theme="dark"] .isia-logo-light,
+.nav-dark .isia-logo-light {
+  display: none;
+}
+:root[data-theme="dark"] .isia-logo-dark,
+.nav-dark .isia-logo-dark {
+  display: block;
 }

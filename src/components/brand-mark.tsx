@@ -6,6 +6,7 @@ import {
   BRAND_MARK_STROKE,
   BRAND_MARK_TAIL,
   isVoceroName,
+  isIsiaName,
 } from "@/lib/brand";
 import { faviconHref, faviconInitial } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
@@ -69,7 +70,7 @@ export function BrandTile({
       )}
       aria-hidden
     >
-      {branding.favicon ? (
+      {branding.favicon || isIsiaName(branding.name) ? (
         // Sin next/image a propósito: es un archivo de una ruta propia, ya
         // pequeño; pasarlo por el optimizador sería trabajo para no ahorrar.
         // eslint-disable-next-line @next/next/no-img-element
@@ -112,11 +113,35 @@ export function BrandLogo({
   branding,
   size = "md",
   className,
+  compact = false,
 }: {
   branding: BrandingMark;
   size?: keyof typeof WORDMARK_SIZE;
   className?: string;
+  /** Barra móvil: icono oficial de 32px; en desktop/login el cubo completo. */
+  compact?: boolean;
 }) {
+  if (isIsiaName(branding.name) && !branding.favicon) {
+    if (compact) {
+      return (
+        <span className={cn("flex items-center gap-2.5", className)}>
+          {/* Archivo vectorial local, servido sin optimización ni distorsión. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/branding/isia/icon.svg" width={32} height={32} alt="" className="h-8 w-8 shrink-0" />
+          <span className="font-display text-[23px] font-bold tracking-tight">isIA</span>
+        </span>
+      );
+    }
+    const pixels = size === "lg" ? 120 : 96;
+    return (
+      <span className={cn("isia-logo inline-flex shrink-0", className)}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/branding/isia/logo-light.svg" width={pixels} height={pixels} alt="isIA" className="isia-logo-light object-contain" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/branding/isia/logo-dark.svg" width={pixels} height={pixels} alt="isIA" className="isia-logo-dark object-contain" />
+      </span>
+    );
+  }
   if (isVoceroName(branding.name) && !branding.favicon) {
     return (
       <span className={cn("flex items-center gap-2 text-foreground", className)}>

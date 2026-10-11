@@ -123,8 +123,9 @@ const config: Config = {
       // Las tres voces de la marca (ver src/app/layout.tsx, donde next/font
       // las descarga en build y las sirve self-hosted, sin CDN en runtime).
       fontFamily: {
-        sans: ["var(--font-sans)", "Archivo", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
-        serif: ["var(--font-serif)", "Instrument Serif", "Georgia", "serif"],
+        sans: ["var(--font-sans)", "Albert Sans", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        display: ["var(--font-display)", "Archivo", "system-ui", "sans-serif"],
+        serif: ["var(--font-display)", "Archivo", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "IBM Plex Mono", "ui-monospace", "Cascadia Code", "monospace"],
       },
     },

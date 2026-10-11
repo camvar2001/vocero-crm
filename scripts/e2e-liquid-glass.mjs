@@ -175,6 +175,10 @@ try{
   await page.screenshot({path:join(output,'glass-'+theme+'-desktop.png')});
   await page.getByRole('link',{name:'Buscador',exact:true}).click();await page.getByLabel('Mensaje para Buscador').waitFor();
   await page.getByLabel('Mensaje para Buscador').fill('Borrador local sin envío');
+  const compact = await page.locator('section[aria-labelledby="inmob-chat-title"]').evaluate(el=>({header:el.querySelector('header').getBoundingClientRect().height,composer:el.querySelector('footer').getBoundingClientRect().height}));
+  ok(theme+' compact WhatsApp proportions',Math.abs(compact.header-64)<1&&Math.abs(compact.composer-64)<1,JSON.stringify(compact));
+  ok(theme+' user can adjust view',await page.getByRole('button',{name:'Ajustar vista',exact:true}).count()===1);
+  ok(theme+' navigation can collapse',await page.getByRole('button',{name:'Retraer menú',exact:true}).count()===1);
   ok(theme+' chat composer enabled',await page.getByRole('button',{name:'Enviar',exact:true}).isEnabled());
   const fieldMaterial=await page.getByLabel('Mensaje para Buscador').evaluate(el=>({filter:getComputedStyle(el).filter,bg:getComputedStyle(el).backgroundColor}));
   ok(theme+' transparent composer text stays sharp',fieldMaterial.filter==='none'&&fieldMaterial.bg==='rgba(0, 0, 0, 0)');

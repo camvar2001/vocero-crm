@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -12,6 +12,8 @@ import {
   Kanban,
   LogOut,
   MessageCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
   Search,
   Settings,
   Sparkles,
@@ -25,6 +27,10 @@ import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLogo } from "@/components/brand-mark";
+import { BrandTile } from "@/components/brand-mark";
+import { useViewLayout, ViewLayoutControls } from "@/components/view-layout";
+import { ResizeHandle } from "@/components/resize-handle";
+import { VIEW_LIMITS } from "@/lib/view-layout";
 import {
   BUILD_COMMIT,
   UNVERIFIED_COMMIT_NOTE,
@@ -116,6 +122,7 @@ export function AppNav({
   const pathname = usePathname();
   const router = useRouter();
   const [unread, setUnread] = useState(0);
+  const { layout, update } = useViewLayout();
 
   async function refetchUnread() {
     const res = await fetch("/api/conversations").catch(() => null);
@@ -150,6 +157,9 @@ export function AppNav({
 
   return (
     <aside
+      aria-label="Menú principal"
+      data-collapsed={layout.navCollapsed}
+      style={{ "--nav-width": `${layout.navWidth}px` } as CSSProperties}
       // Móvil: cajón que se desliza desde la izquierda (siempre montado, así
       // la transición corre en ambos sentidos). Escritorio: columna fija.
       // `visibility` va en la transición a propósito: al cerrar mantiene el
@@ -160,26 +170,30 @@ export function AppNav({
         // nombre del usuario, el nombre white-label en BrandLogo) hereda el
         // color YA CALCULADO en <body> con el tema de la página, no el de
         // `.nav-dark` — y un texto oscuro sobre este fondo oscuro se pierde.
-        "nav-dark glass-nav fixed inset-y-0 left-0 z-50 flex w-[17rem] shrink-0 flex-col overflow-y-auto border-r bg-subtle px-3 pb-3.5 pt-4 text-foreground transition-[transform,visibility] duration-200",
-        "lg:static lg:visible lg:z-auto lg:w-56 lg:translate-x-0 lg:overflow-visible lg:transition-none",
+        "nav-dark glass-nav view-nav fixed inset-y-0 left-0 z-50 flex shrink-0 flex-col overflow-y-auto border-r bg-subtle px-3 pb-3.5 pt-3 text-foreground transition-[transform,visibility] duration-200",
+        "lg:relative lg:visible lg:z-auto lg:translate-x-0 lg:transition-none",
         open ? "visible translate-x-0 shadow-pop" : "invisible -translate-x-full"
       )}
     >
       {/* Marca: el logo de Vocero o, white-label, la inicial y el nombre */}
-      <div className="mb-5 flex items-start gap-1.5 px-2 pt-0.5">
+      <div className="view-nav-brand mb-3 flex items-center gap-1.5">
         {/* En móvil el cajón necesita su propio cierre: el velo no siempre es
             alcanzable con el pulgar. */}
         <button
           onClick={onClose}
           aria-label="Cerrar el menú"
-          className="-ml-1 mt-0.5 rounded-md p-1.5 text-text-3 hover:bg-accent hover:text-foreground lg:hidden"
+          className="glass-floating glass-icon-button lg:hidden"
         >
           <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
         </button>
-        <div className="min-w-0">
+        <div className="view-nav-full min-w-0 flex-1 px-1">
           <BrandLogo branding={branding} />
           <span className="kicker mt-2 block">CRM · WhatsApp</span>
         </div>
+        <div className="view-nav-compact hidden" title={versionTitle(branding.name, version)}><BrandTile branding={branding} className="h-8 w-8" /></div>
+        <button type="button" aria-label={layout.navCollapsed ? "Expandir menú" : "Retraer menú"} aria-expanded={!layout.navCollapsed} title={layout.navCollapsed ? "Expandir menú" : "Retraer menú"} onClick={() => update({ navCollapsed: !layout.navCollapsed })} className="glass-floating glass-icon-button hidden lg:flex">
+          {layout.navCollapsed ? <PanelLeftOpen className="h-[18px] w-[18px]" aria-hidden="true" /> : <PanelLeftClose className="h-[18px] w-[18px]" aria-hidden="true" />}
+        </button>
       </div>
 
       <nav className="flex flex-col gap-0.5">
@@ -187,14 +201,14 @@ export function AppNav({
           const active =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
-            <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={navItemClass(active)}>
+            <Link key={item.href} href={item.href} title={item.label} aria-label={item.badge && unread > 0 ? `${item.label} ${unread}` : item.label} aria-current={active ? "page" : undefined} className={navItemClass(active)}>
               <item.icon
                 className={cn("h-[17px] w-[17px]", active ? "text-brand" : "text-text-3")}
                 strokeWidth={1.8}
               />
-              <span className="flex-1">{item.label}</span>
+              <span className="view-nav-label flex-1">{item.label}</span>
               {item.badge && unread > 0 && (
-                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg">
+                <span aria-hidden="true" className="view-nav-badge flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg">
                   {unread}
                 </span>
               )}
@@ -205,29 +219,30 @@ export function AppNav({
 
       <div className="flex-1" />
 
-      <Link href="/settings" aria-current={settingsActive ? "page" : undefined} className={navItemClass(settingsActive)}>
+      <div className="view-nav-tools mb-1 flex items-center gap-2"><ViewLayoutControls menu /></div>
+      <Link href="/settings" title="Ajustes" aria-label="Ajustes" aria-current={settingsActive ? "page" : undefined} className={navItemClass(settingsActive)}>
         <Settings
           className={cn("h-[17px] w-[17px]", settingsActive ? "text-brand" : "text-text-3")}
           strokeWidth={1.8}
         />
-        Ajustes
+        <span className="view-nav-label">Ajustes</span>
       </Link>
 
-      <div className="mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand-text">
+      <div className="view-nav-user mt-1 flex flex-wrap items-center gap-2 rounded-sm px-1 py-2">
+        <span className="view-nav-full flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand-text">
           {initials(userName)}
         </span>
-        <span className="min-w-0 flex-1">
+        <span className="view-nav-full min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold">{userName}</span>
           <span className="block truncate text-[11px] text-text-3">
             {role === "owner" ? "Propietario" : "Equipo"} · En línea
           </span>
         </span>
-        <ThemeToggle initial={theme} />
+        <ThemeToggle initial={theme} className="glass-floating glass-icon-button" />
         <button
           aria-label="Cerrar sesión"
           title="Cerrar sesión"
-          className="rounded p-1 text-text-3 hover:text-foreground"
+          className="glass-floating glass-icon-button"
           onClick={async () => {
             await signOut();
             router.push("/login");
@@ -252,7 +267,7 @@ export function AppNav({
           advertencia: basta 3:1 para un gráfico) y el texto va en `text-2`,
           que pasa AA sobre la barra en cualquier tema. */}
       <p
-        className="mt-2 px-2.5 font-mono text-[10.5px] tracking-[0.06em] text-text-2"
+        className="view-nav-full mt-2 px-2.5 font-mono text-[10.5px] tracking-[0.06em] text-text-2"
         title={versionTitle(branding.name, version)}
       >
         {versionLabel(version.commit)}
@@ -267,6 +282,7 @@ export function AppNav({
           </span>
         )}
       </p>
+      {!layout.navCollapsed && <ResizeHandle label="Ajustar ancho del menú" axis="x" value={layout.navWidth} {...VIEW_LIMITS.navWidth} defaultValue={VIEW_LIMITS.navWidth.default} onChange={(navWidth, persist) => update({ navWidth }, persist)} className="hidden lg:block" />}
     </aside>
   );
 }

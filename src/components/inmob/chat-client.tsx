@@ -9,11 +9,16 @@ import {
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
+  type CSSProperties,
 } from "react";
-import { AlertTriangle, ArrowUp, CalendarDays, Clock3, ExternalLink, Search, Sparkles } from "lucide-react";
+import { createPortal } from "react-dom";
+import { AlertTriangle, ArrowUp, CalendarDays, Clock3, ExternalLink, Info, Search, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { InmobAgent, InmobChat, InmobResult, InmobTurn } from "@/lib/inmob";
+import { useViewLayout, ViewLayoutControls } from "@/components/view-layout";
+import { ResizeHandle } from "@/components/resize-handle";
+import { VIEW_LIMITS } from "@/lib/view-layout";
 
 type RecoveryDraft = {
   requestId: string;
@@ -310,6 +315,11 @@ function ResultCards({ results }: { results: InmobResult[] }) {
 
 export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   const copy = AGENT_COPY[agent];
+  const { layout, update } = useViewLayout();
+  const [infoOpen, setInfoOpen] = useState(false);
+  const infoRef = useRef<HTMLDialogElement>(null);
+  const infoTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (infoOpen) infoRef.current?.showModal(); }, [infoOpen]);
   const [chat, setChat] = useState<InmobChat | null>(null);
   const [turns, setTurns] = useState<InmobTurn[]>([]);
   const [draft, setDraft] = useState("");
@@ -561,27 +571,29 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   }
 
   return (
-    <section aria-labelledby="inmob-chat-title" className="flex h-full min-h-0 flex-col bg-background">
-      <header className="glass-bar shrink-0 border-b border-border bg-background px-4 py-4 sm:px-6 sm:py-5">
-        <div className="mx-auto flex max-w-5xl items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-brand-soft bg-brand-tint text-brand-text">
+    <section aria-labelledby="inmob-chat-title" className="inmob-chat relative h-full min-h-0" style={{ "--chat-header-height": `${layout.headerHeight}px`, "--chat-composer-height": `${layout.composerHeight}px` } as CSSProperties}>
+      <header className="glass-chat-bar inmob-chat-header">
+        <div className="mx-auto flex h-full max-w-5xl items-center gap-2 sm:gap-3">
+          <span className="glass-floating flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand-text">
             {agent === "buscador" ? <Search className="h-5 w-5" aria-hidden="true" /> : <CalendarDays className="h-5 w-5" aria-hidden="true" />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="kicker text-brand-ink">Century 21 · conversación</p>
-            <h1 id="inmob-chat-title" className="mt-0.5 text-lg font-bold tracking-tight text-foreground sm:text-xl">
+            <h1 id="inmob-chat-title" className="truncate text-base font-semibold tracking-tight text-foreground">
               {copy.title}
             </h1>
-            <p className="mt-0.5 text-xs leading-5 text-text-2 sm:text-sm">{copy.description}</p>
+            <p className="truncate text-[11px] leading-4 text-text-2">Century 21 · conversación</p>
           </div>
-          <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-success-soft bg-success-tint px-3 py-1.5 text-xs font-medium text-success-text sm:inline-flex">
+          <span className="glass-floating hidden h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-text-2 sm:inline-flex">
             <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
             Listo para conversar
           </span>
+          <button ref={infoTrigger} type="button" className="glass-floating glass-icon-button" aria-label={`Información de ${copy.title}`} title={`Información de ${copy.title}`} onClick={() => setInfoOpen(true)}><Info className="h-[18px] w-[18px]" aria-hidden="true" /></button>
+          <ViewLayoutControls />
         </div>
+        <ResizeHandle label="Ajustar altura de la cabecera" axis="y" value={layout.headerHeight} {...VIEW_LIMITS.headerHeight} defaultValue={VIEW_LIMITS.headerHeight.default} onChange={(headerHeight, persist) => update({ headerHeight }, persist)} className="inmob-header-resize" />
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-chat px-3 py-5 sm:px-6 sm:py-7">
+      <div className="inmob-history min-h-0 overflow-y-auto bg-chat px-3 sm:px-6">
         <div className="mx-auto flex min-h-full max-w-4xl flex-col">
           <div className="mb-5 flex items-center justify-between gap-3">
             <p className="kicker text-text-3">Historial de {copy.title}</p>
@@ -665,17 +677,19 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
         </div>
       </div>
 
-      <footer className="glass-bar shrink-0 border-t border-border bg-background px-3 py-3 sm:px-6 sm:py-4">
-        <div className="mx-auto max-w-4xl">
-          {repeatsUncertain && (
-            <p role="alert" className="mb-2 text-xs leading-5 text-warning-text">No recibimos la confirmación de esta acción. Revisa si ya se guardó o escribe otra consulta.</p>
-          )}
-          {requestError && <p role="alert" className="mb-2 text-xs leading-5 text-danger-text">{requestError}</p>}
+      <footer className="glass-chat-bar inmob-chat-footer">
+        <ResizeHandle label="Ajustar altura para redactar" axis="y" reverse value={layout.composerHeight} {...VIEW_LIMITS.composerHeight} defaultValue={VIEW_LIMITS.composerHeight.default} onChange={(composerHeight, persist) => update({ composerHeight }, persist)} className="inmob-composer-resize" />
+        <div className="mx-auto h-full max-w-4xl">
+          {(repeatsUncertain || requestError) && <div className="inmob-composer-alert glass-floating rounded-xl p-3">
+            {repeatsUncertain && <p role="alert" className="text-xs leading-5 text-warning-text">No recibimos la confirmación de esta acción. Revisa si ya se guardó o escribe otra consulta.</p>}
+            {requestError && <p role="alert" className="text-xs leading-5 text-danger-text">{requestError}</p>}
+          </div>}
           <form
             onSubmit={(event) => void submit(event)}
-            className="glass-inset rounded-xl border border-border-strong bg-background p-2 shadow-sm transition-colors focus-within:border-brand-soft focus-within:ring-2 focus-within:ring-brand-soft sm:p-2.5"
+            className="flex h-full items-end gap-2"
           >
             <label className="sr-only" htmlFor={`inmob-message-${agent}`}>Mensaje para {copy.title}</label>
+            <div className="glass-floating inmob-composer-pill h-full min-w-0 flex-1 overflow-hidden rounded-[24px] border border-border-strong focus-within:ring-2 focus-within:ring-brand-soft">
             <Textarea
               id={`inmob-message-${agent}`}
               aria-label={`Mensaje para ${copy.title}`}
@@ -693,32 +707,28 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
               onKeyDown={onComposerKeyDown}
               placeholder={copy.hint}
               maxLength={4000}
-              rows={2}
+              rows={1}
+              aria-describedby={`inmob-help-${agent}`}
               disabled={
                 !chat || loading || submitting || hasRunning ||
                 Boolean(recovery && (recovery.state === "pending" || recovery.state === "rejected"))
               }
-              className="min-h-[58px] resize-y border-0 bg-transparent px-2 py-1 shadow-none focus-visible:border-transparent focus-visible:ring-0"
+              className="h-full min-h-0 resize-none rounded-none border-0 bg-transparent px-4 py-[10px] leading-5 shadow-none focus-visible:border-transparent focus-visible:ring-0"
             />
-            <div className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t border-border px-1 pt-2">
-              <div className="flex min-w-0 items-center gap-2 text-[11px] text-text-3">
-                <span className="hidden sm:inline">Enter envía · Shift+Enter agrega una línea</span>
-                <span className="sm:hidden">Enter para enviar</span>
-                <span aria-live="polite" className={draft.length > 4000 ? "text-danger-text" : "tabular-nums"}>
-                  {draft.length}/4000
-                </span>
-              </div>
-              <Button type="submit" size="sm" disabled={!canSend} aria-label="Enviar">
-                Enviar
-                <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
-              </Button>
             </div>
+            <button type="submit" className="glass-floating glass-icon-button inmob-send" disabled={!canSend} aria-label="Enviar" title="Enviar mensaje"><ArrowUp className="h-5 w-5" aria-hidden="true" /></button>
           </form>
-          <p className="mt-2 text-center text-[10.5px] leading-4 text-text-3">
-            {agent === "secretaria" ? "Revisa los datos de una cita antes de confirmarla." : "Los resultados pueden variar según la información disponible."}
-          </p>
+          <p id={`inmob-help-${agent}`} className="sr-only">Enter envía · Shift+Enter agrega una línea. Máximo 4000 caracteres. Abre Información para más detalles.</p>
+          <span className="sr-only" aria-live="polite">{draft.length >= 3800 ? `${draft.length} de 4000 caracteres` : ""}</span>
         </div>
       </footer>
+      {infoOpen && createPortal(<dialog ref={infoRef} aria-labelledby="inmob-info-title" className="view-layout-dialog rounded-lg border border-border bg-popover p-5 text-foreground shadow-pop" onClose={() => { setInfoOpen(false); infoTrigger.current?.focus(); }}>
+        <div className="mb-4 flex items-center justify-between gap-4"><h2 id="inmob-info-title" className="font-display text-lg font-semibold">{copy.title}</h2><button type="button" aria-label="Cerrar información" className="glass-floating glass-icon-button" onClick={() => infoRef.current?.close()}><X className="h-4 w-4" aria-hidden="true" /></button></div>
+        <p className="text-sm leading-6 text-text-2">{copy.description}</p>
+        <p className="mt-4 text-sm text-text-2">Enter envía · Shift+Enter agrega una línea.</p>
+        <p className="mt-2 text-sm text-text-2">{draft.length}/4000 caracteres</p>
+        <p className="mt-4 text-xs leading-5 text-text-2">{agent === "secretaria" ? "Revisa los datos de una cita antes de confirmarla." : "Los resultados pueden variar según la información disponible."}</p>
+      </dialog>, document.body)}
     </section>
   );
 }

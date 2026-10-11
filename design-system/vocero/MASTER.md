@@ -21,3 +21,7 @@ Transiciones 180–220ms de color/sombra, sin animar blur. Respetar reduced-moti
 ## Enmienda oficial isIA — mismo día
 
 Identidad visual elegida por el propietario: isIA v1.1 «cubo neuronal». Cian operativo #007A80, grafito #14181F, cobre #C9622E, cielo #ECF9F9; oscuro #0D1016 y cianclaro #67BDC1. Fondo glass con luz cielo/cian y un toque cobre. Albert Sans para UI, Archivo para títulos, IBM Plex Mono para datos, desde archivos oficiales locales. Logo completo >=96px (sidebar/login), icono32px en barra móvil; usar variantes oficiales sin filtros/sombras/distorsión sobre el logo. Marca genérica preservada para nombres distintos de isIA.
+
+## Espacios ajustables y acciones flotantes
+
+Referencia visual WhatsApp aportada por el propietario. Cabecera/compositor INMOB 64px iniciales, título16px y píldora de una línea; acciones circulares44px. Vidrio32px en píldora/acciones,36px en barras que difuminan el historial al pasar por detrás. Ayuda/descripción en Información; ajuste de altos64–144/64–220 mediante separadores o rangos en Ajustar vista. Sidebar240px iniciales, ajustable200–360px/retraíble72px, iconos con etiquetas accesibles y title. El navegador guarda solo preferencias; restablecer vuelve al inicio compacto. Altos efectivos limitados en pantallas bajas; historial con padding/scroll-padding para leer ambos extremos. Sin fotos copiadas, blur animado ni dependencias nuevas.

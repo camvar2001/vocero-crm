@@ -12,7 +12,7 @@ import { BrandLogo } from "@/components/brand-mark";
 /**
  * Cascarón de la app en dos modos:
  *
- * - Escritorio (lg+): el panel lateral es una columna fija, como siempre.
+ * - Escritorio (lg+): lateral ajustable y retráctil con preferencias locales.
  * - Móvil/tableta: el lateral sale de la izquierda como cajón sobre un velo,
  *   y arriba queda una barra azul marino con el hamburguesa y la marca. El
  *   cajón se cierra solo al navegar (el `pathname` cambia) y con Escape.
@@ -92,7 +92,7 @@ export function AppShell({
             onClick={() => setNavOpen(true)}
             aria-label="Abrir el menú"
             aria-expanded={navOpen}
-            className="rounded-md p-2 text-text-2 hover:bg-accent hover:text-foreground"
+            className="glass-floating glass-icon-button text-text-2"
           >
             <Menu className="h-5 w-5" strokeWidth={1.8} />
           </button>

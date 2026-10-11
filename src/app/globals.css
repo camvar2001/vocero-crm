@@ -435,7 +435,7 @@
   }
   .nav-dark {
     --glass-bg: color-mix(in srgb, var(--bg) 90%, transparent);
-    --glass-subtle: color-mix(in srgb, var(--bg-subtle) 88%, transparent);
+    --glass-subtle: color-mix(in srgb, var(--bg-subtle) 76%, transparent);
     --glass-panel: color-mix(in srgb, var(--bg-panel) 92%, transparent);
     --glass-hover: color-mix(in srgb, var(--bg-hover) 96%, transparent);
     --glass-raised: color-mix(in srgb, var(--bg-raised) 96%, transparent);
@@ -693,4 +693,152 @@
 :root[data-theme="dark"] .isia-logo-dark,
 .nav-dark .isia-logo-dark {
   display: block;
+}
+
+/* Vidrio de acciones flotantes. Base opaca para navegadores sin soporte. */
+:root, .nav-dark {
+  --glass-floating: var(--bg);
+  --glass-floating-bar: var(--bg);
+}
+@supports (background-color: color-mix(in srgb, white 50%, transparent)) and ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-floating: color-mix(in srgb, var(--bg) 72%, transparent);
+    --glass-floating-bar: color-mix(in srgb, var(--bg) 52%, transparent);
+  }
+  :root[data-theme="dark"] {
+    --glass-floating: color-mix(in srgb, var(--bg) 82%, transparent);
+    --glass-floating-bar: color-mix(in srgb, var(--bg) 68%, transparent);
+  }
+  .nav-dark {
+    --glass-floating: color-mix(in srgb, var(--bg) 82%, transparent);
+    --glass-floating-bar: color-mix(in srgb, var(--bg) 72%, transparent);
+  }
+}
+.glass-floating {
+  background-color: var(--glass-floating);
+  background-image: linear-gradient(145deg, var(--glass-reflection), transparent 65%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-edge), 0 4px 14px -8px rgba(8, 33, 37, .3);
+  -webkit-backdrop-filter: blur(32px) saturate(var(--glass-saturation));
+  backdrop-filter: blur(32px) saturate(var(--glass-saturation));
+}
+button.glass-floating {
+  transition: background-color 180ms ease, box-shadow 180ms ease, color 180ms ease;
+  cursor: pointer;
+}
+button.glass-floating:hover { background-color: var(--glass-hover); }
+button.glass-floating:focus-visible, .view-resize:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+.glass-icon-button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--text-2);
+  touch-action: manipulation;
+}
+.glass-icon-button { display: inline-flex; }
+.glass-icon-button.hidden { display: none; }
+.glass-chat-bar {
+  background-color: var(--glass-floating-bar);
+  background-image: linear-gradient(145deg, var(--glass-reflection), transparent 70%);
+  -webkit-backdrop-filter: blur(36px) saturate(var(--glass-saturation));
+  backdrop-filter: blur(36px) saturate(var(--glass-saturation));
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+.inmob-chat {
+  container-type: size;
+  --chat-header-effective: var(--chat-header-height);
+  --chat-composer-effective: var(--chat-composer-height);
+  overflow: hidden;
+}
+@supports (height: 1cqh) {
+  .inmob-chat {
+    --chat-header-effective: min(var(--chat-header-height), max(64px, calc(40cqh - 64px)));
+    --chat-composer-effective: min(var(--chat-composer-height), max(64px, calc(60cqh - 96px)));
+  }
+}
+.inmob-chat-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--chat-header-effective);
+  z-index: 10;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--glass-edge);
+}
+.inmob-history {
+  position: absolute;
+  inset: 0;
+  padding-top: calc(var(--chat-header-effective) + 16px);
+  padding-bottom: calc(var(--chat-composer-effective) + env(safe-area-inset-bottom, 0px) + 16px);
+  scroll-padding-top: calc(var(--chat-header-effective) + 16px);
+  scroll-padding-bottom: calc(var(--chat-composer-effective) + 16px);
+  background-image: radial-gradient(ellipse at 90% 38%, var(--canvas-cyan), transparent 60%), radial-gradient(ellipse at 15% 86%, var(--canvas-warm), transparent 65%);
+}
+.inmob-chat-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--chat-composer-effective) + env(safe-area-inset-bottom, 0px));
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  z-index: 10;
+  border-top: 1px solid var(--glass-edge);
+}
+.inmob-send { color: var(--accent-text); }
+.inmob-send:disabled { opacity: .45; cursor: not-allowed; }
+.inmob-composer-alert {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 12px;
+  right: 12px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.view-layout-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  overflow-y: auto;
+}
+.view-layout-dialog::backdrop { background: var(--overlay); }
+.view-layout-range { height: 44px; accent-color: var(--accent-text); cursor: pointer; }
+.view-layout-range:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; border-radius: 8px; }
+.view-nav { width: min(var(--nav-width, 240px), calc(100vw - 32px)); }
+.view-nav .glass-nav-item { position: relative; flex-shrink: 0; min-height: 44px; }
+.view-nav .glass-nav-item > svg { flex-shrink: 0; }
+.view-nav-tools { flex-shrink: 0; }
+.view-resize { position: absolute; z-index: 15; touch-action: none; user-select: none; }
+.view-resize span { display: block; background: var(--border-strong); border-radius: 999px; }
+.view-resize:hover span, .view-resize:focus-visible span { background: var(--accent-text); }
+.view-resize-x { inset-block: 12px; right: 0; width: 10px; cursor: col-resize; }
+.view-resize-x span { position: absolute; top: 42%; right: 3px; height: 48px; width: 3px; }
+.view-resize-y { left: 12px; right: 12px; height: 10px; cursor: row-resize; }
+.view-resize-y span { width: 48px; height: 3px; margin: 3px auto; }
+.inmob-header-resize { bottom: -5px; }
+.inmob-composer-resize { top: -5px; }
+@media (min-width: 1024px) {
+  .glass-icon-button.hidden.lg\:flex { display: flex; }
+  .glass-icon-button.lg\:hidden { display: none; }
+  .view-nav[data-collapsed="true"] { width: 72px; padding-inline: 10px; }
+  .view-nav[data-collapsed="true"] .view-nav-full,
+  .view-nav[data-collapsed="true"] .view-nav-label { display: none; }
+  .view-nav[data-collapsed="true"] .view-nav-compact { display: block; }
+  .view-nav[data-collapsed="true"] .view-nav-brand { flex-direction: column; gap: 10px; }
+  .view-nav[data-collapsed="true"] .glass-nav-item { justify-content: center; padding-inline: 0; }
+  .view-nav[data-collapsed="true"] .view-nav-badge { position: absolute; right: 1px; top: 1px; height: 16px; min-width: 16px; font-size: 9px; padding-inline: 3px; }
+  .view-nav[data-collapsed="true"] .view-nav-user,
+  .view-nav[data-collapsed="true"] .view-nav-tools { justify-content: center; }
+}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :root, :root[data-theme="dark"], .nav-dark { --glass-floating: var(--bg); --glass-floating-bar: var(--bg); }
+  .glass-floating, .glass-chat-bar { -webkit-backdrop-filter: none; backdrop-filter: none; background-image: none; }
 }

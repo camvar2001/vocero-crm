@@ -82,6 +82,7 @@ const fallbackTree = postcss.parse(css);
 fallbackTree.walkAtRules('supports',rule=>{if(rule.params.includes('backdrop-filter'))rule.remove()});
 fallbackTree.walkDecls(/^(?:-webkit-)?backdrop-filter$/,decl=>decl.remove());
 const fallback = fallbackTree.toString();
+let chatPosts = 0;
 const server = createServer((req,res)=>{
  const url = new URL(req.url,'http://127.0.0.1');
  if(['/branding/isia/logo-light.svg','/branding/isia/logo-dark.svg','/branding/isia/icon.svg'].includes(url.pathname)){
@@ -94,8 +95,11 @@ const server = createServer((req,res)=>{
  if(url.pathname==='/style.css'){res.setHeader('content-type','text/css');res.end(url.searchParams.has('fallback')?fallback:css);return}
  if(url.pathname==='/api/conversations'){res.setHeader('content-type','application/json');res.end('{"conversations":[]}');return}
  if(url.pathname.startsWith('/api/inmob/chats/')){res.setHeader('content-type','application/json');
+   if(req.method==='POST'){chatPosts++;res.statusCode=405;res.end('{}');return}
    if(req.headers.referer?.includes('failure')){res.statusCode=503;res.end('{"error":"fixture"}');return}
-   const agent=url.pathname.split('/').at(-1);res.end(JSON.stringify({chatId:'fixture_'+agent,agent,turns:[]}));return}
+   const agent=url.pathname.split('/').at(-1);
+   const turns=req.headers.referer?.includes('history')?Array.from({length:30},(_,i)=>({requestId:'fixture_'+i,createdAt:new Date(1700000000000+i*1000).toISOString(),message:'Consulta de prueba '+i,reply:'Respuesta de prueba '+i,status:'completed',results:[]})):[];
+   res.end(JSON.stringify({chatId:'fixture_'+agent,agent,turns}));return}
  res.setHeader('content-type','text/html');res.end(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css${url.searchParams.has('fallback')?'?fallback':''}"><title>VOCERO Glass Fixture</title></head><body><div id="root"></div><script src="/bundle.js"></script></body></html>`);
 });
 await new Promise(done=>server.listen(0,'127.0.0.1',done));
@@ -182,6 +186,49 @@ try{
   ok(theme+' chat composer enabled',await page.getByRole('button',{name:'Enviar',exact:true}).isEnabled());
   const fieldMaterial=await page.getByLabel('Mensaje para Buscador').evaluate(el=>({filter:getComputedStyle(el).filter,bg:getComputedStyle(el).backgroundColor}));
   ok(theme+' transparent composer text stays sharp',fieldMaterial.filter==='none'&&fieldMaterial.bg==='rgba(0, 0, 0, 0)');
+  const dimensions = () => page.locator('section[aria-labelledby="inmob-chat-title"]').evaluate(el=>({header:el.querySelector('header').getBoundingClientRect().height,composer:el.querySelector('footer').getBoundingClientRect().height,nav:document.querySelector('aside').getBoundingClientRect().width}));
+  const headHandle=page.getByRole('separator',{name:'Ajustar altura de la cabecera',exact:true});
+  const composerHandle=page.getByRole('separator',{name:'Ajustar altura para redactar',exact:true});
+  const navHandle=page.getByRole('separator',{name:'Ajustar ancho del menú',exact:true});
+  await headHandle.press('ArrowDown');await composerHandle.press('ArrowUp');await navHandle.press('ArrowRight');
+  let size=await dimensions();ok(theme+' keyboard resizes all three regions',size.header===72&&size.composer===72&&size.nav===248,JSON.stringify(size));
+  async function dragHandle(handle,dx,dy){const b=await handle.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2+dx,b.y+b.height/2+dy,{steps:5});await page.mouse.up();}
+  await dragHandle(headHandle,0,24);await dragHandle(composerHandle,0,-32);await dragHandle(navHandle,40,0);
+  size=await dimensions();ok(theme+' pointer drag resizes without sending',size.header===96&&size.composer===104&&size.nav===288,JSON.stringify(size));
+  await page.getByRole('button',{name:'Retraer menú',exact:true}).click();
+  ok(theme+' collapsed sidebar keeps labeled routes',Math.round((await dimensions()).nav)===72&&await page.getByRole('link',{name:'Secretaria',exact:true}).isVisible());
+  await page.reload();await page.getByLabel('Mensaje para Buscador').waitFor();
+  size=await dimensions();ok(theme+' sizes and collapse survive reload',size.header===96&&size.composer===104&&size.nav===72,JSON.stringify(size));
+  ok(theme+' resizing preserves draft',await page.getByLabel('Mensaje para Buscador').inputValue()==='Borrador local sin envío');
+  await page.getByRole('link',{name:'Secretaria',exact:true}).click();await page.getByLabel('Mensaje para Secretaria').waitFor();
+  ok(theme+' two agents share chosen heights',(await dimensions()).header===96&&(await dimensions()).composer===104);
+  await page.getByRole('link',{name:'Buscador',exact:true}).click();await page.getByLabel('Mensaje para Buscador').waitFor();
+  ok(theme+' navigation keeps previous agent draft',await page.getByLabel('Mensaje para Buscador').inputValue()==='Borrador local sin envío');
+  await page.getByRole('button',{name:'Expandir menú',exact:true}).click();
+  ok(theme+' expanding restores chosen width',(await dimensions()).nav===288);
+  await page.getByRole('button',{name:'Ajustar vista',exact:true}).click();
+  const settings=page.getByRole('dialog',{name:'Ajustar vista',exact:true});await settings.waitFor();
+  ok(theme+' settings opens modal with focus',await settings.evaluate(el=>el.matches(':modal')&&el.contains(document.activeElement)));
+  await page.getByRole('slider',{name:'Altura de la cabecera'}).press('End');
+  await page.getByRole('slider',{name:'Altura para redactar'}).press('End');
+  await page.getByRole('slider',{name:'Ancho del menú'}).press('End');
+  size=await dimensions();ok(theme+' accessible sliders reach safe limits',size.header===144&&size.composer===220&&size.nav===360,JSON.stringify(size));
+  await page.getByRole('button',{name:'Cerrar ajustes de vista'}).click();
+  ok(theme+' modal returns focus to trigger',await page.getByRole('button',{name:'Ajustar vista',exact:true}).evaluate(el=>document.activeElement===el));
+  await page.setViewportSize({width:375,height:360});
+  const short=await page.locator('section[aria-labelledby="inmob-chat-title"]').evaluate(el=>({available:el.clientHeight-el.querySelector('header').clientHeight-el.querySelector('footer').clientHeight,scroll:document.documentElement.scrollWidth,width:innerWidth}));
+  ok(theme+' short mobile viewport preserves conversation',short.available>=120&&short.scroll<=short.width,JSON.stringify(short));
+  await page.getByRole('button',{name:'Ajustar vista',exact:true}).click();await page.getByRole('button',{name:'Restablecer tamaños'}).click();
+  await page.getByRole('button',{name:'Cerrar ajustes de vista'}).click();
+  await page.setViewportSize({width:1440,height:900});
+  size=await dimensions();ok(theme+' reset restores compact defaults',size.header===64&&size.composer===64&&size.nav===240,JSON.stringify(size));
+  const floating=await page.locator('.inmob-composer-pill').evaluate(el=>({blur:getComputedStyle(el).backdropFilter,radius:getComputedStyle(el).borderRadius}));
+  ok(theme+' composer uses a floating frosted pill',floating.blur.includes('32px')&&parseFloat(floating.radius)>=24,JSON.stringify(floating));
+  const bars=await page.locator('.glass-chat-bar').evaluateAll(els=>els.every(el=>getComputedStyle(el).backdropFilter.includes('36px')));
+  ok(theme+' chat header and footer visibly blur history',bars);
+  await page.getByRole('button',{name:'Información de Buscador'}).click();await page.getByRole('dialog',{name:'Buscador',exact:true}).waitFor();
+  ok(theme+' compact header retains description and help',await page.getByText('Encuentra opciones por zona, precio y características.',{exact:true}).isVisible()&&await page.getByText('Enter envía · Shift+Enter agrega una línea.',{exact:true}).isVisible());
+  await page.getByRole('button',{name:'Cerrar información'}).click();
   for(const width of [375,768,1440]){
    await page.setViewportSize({width,height:900});
    const fits=await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth);
@@ -202,12 +249,34 @@ try{
   await page.setViewportSize({width:375,height:812});await page.screenshot({path:join(output,'glass-'+theme+'-mobile.png')});
   await page.setViewportSize({width:1440,height:900});
  }
+ await page.goto(base+'/inmob/buscador?history');await page.getByText('Respuesta de prueba 29',{exact:true}).waitFor();
+ const last=page.getByText('Respuesta de prueba 29',{exact:true});await last.scrollIntoViewIfNeeded();
+ const lastBox=await last.boundingBox(),footerBox=await page.locator('footer').boundingBox();
+ ok('last message can be read above floating composer',lastBox.y+lastBox.height<=footerBox.y);
+ await page.locator('.inmob-history').evaluate(el=>el.scrollTop=0);
+ const firstBox=await page.getByText('Consulta de prueba 0',{exact:true}).boundingBox(),headerBox=await page.locator('.inmob-chat-header').boundingBox();
+ ok('first message can be read below floating header',firstBox.y>=headerBox.y+headerBox.height);
+ ok('layout actions never post a chat message',chatPosts===0,String(chatPosts));
+ const corruptContext=await browser.newContext({viewport:{width:1440,height:900}});
+ await corruptContext.addInitScript(()=>localStorage.setItem('vocero:view-layout:v1','{broken'));
+ const corruptPage=await corruptContext.newPage();await corruptPage.goto(base+'/inmob/buscador');await corruptPage.getByLabel('Mensaje para Buscador').waitFor();
+ ok('corrupt preferences recover to usable defaults',await corruptPage.locator('.inmob-chat-header').evaluate(el=>el.getBoundingClientRect().height===64));
+ await corruptContext.close();
+ const blockedContext=await browser.newContext({viewport:{width:1440,height:900}});
+ await blockedContext.addInitScript(()=>{Storage.prototype.getItem=()=>{throw new Error('fixture blocked')};Storage.prototype.setItem=()=>{throw new Error('fixture blocked')};});
+ const blockedPage=await blockedContext.newPage();await blockedPage.goto(base+'/inmob/buscador');await blockedPage.getByLabel('Mensaje para Buscador').waitFor();
+ await blockedPage.getByRole('separator',{name:'Ajustar altura de la cabecera'}).press('ArrowDown');
+ ok('blocked storage keeps visible adjustment working',await blockedPage.locator('.inmob-chat-header').evaluate(el=>el.getBoundingClientRect().height===72));
+ await blockedContext.close();
  await page.goto(base+'/?theme=light&fallback');await page.getByTestId('material-card').waitFor();
  for(const [name,selector] of [['panel','[data-testid="material-card"]'],['navigation','.glass-nav'],['workspace','.glass-workspace::before']]){
   const opaque=await page.evaluate(selector=>{const pseudo=selector.endsWith('::before');const el=document.querySelector(selector.replace('::before',''));const c=getComputedStyle(el,pseudo?'::before':null);return {bg:c.backgroundColor,blur:c.backdropFilter||c.webkitBackdropFilter||'none'}},selector);
   ok('unsupported browser '+name+' opaque fallback',!opaque.bg.includes('/')&&!opaque.bg.startsWith('rgba'),opaque.bg);
   ok('unsupported browser '+name+' has no blur',opaque.blur==='none',opaque.blur);
  }
+ await page.goto(base+'/inmob/buscador?fallback');await page.getByLabel('Mensaje para Buscador').waitFor();
+ const plainFloating=await page.locator('.inmob-composer-pill').evaluate(el=>({bg:getComputedStyle(el).backgroundColor,blur:getComputedStyle(el).backdropFilter}));
+ ok('floating controls preserve opaque unsupported fallback',plainFloating.bg.startsWith('rgb(')&&plainFloating.blur==='none',JSON.stringify(plainFloating));
  await page.emulateMedia({reducedMotion:'reduce'});await page.goto(base+'/?theme=dark');await page.getByTestId('material-card').waitFor();
  const motion=await page.getByRole('button',{name:'Abrir diálogo'}).evaluate(el=>parseFloat(getComputedStyle(el).transitionDuration));
  ok('reduced motion respected',motion<.01,String(motion));

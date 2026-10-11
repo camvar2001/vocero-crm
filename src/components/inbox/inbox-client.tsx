@@ -379,7 +379,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
 
       <section
         className={cn(
-          "shrink-0 overflow-hidden border-l transition-[width] duration-200",
+          "glass-contact-drawer shrink-0 overflow-hidden border-l transition-[width] duration-200",
           // Debajo de xl no hay ancho para una tercera columna: el panel se
           // vuelve un cajón que entra desde la derecha, encima del hilo.
           "max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-40 max-xl:w-auto max-xl:bg-popover max-xl:transition-transform",

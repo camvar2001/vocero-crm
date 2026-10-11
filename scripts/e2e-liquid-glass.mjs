@@ -77,7 +77,10 @@ const fontCss = `
 const css = (await postcss([tailwind({config:join(root,'tailwind.config.ts'),content:[join(root,'src/**/*.{ts,tsx}'),{raw:source,extension:'tsx'}]}),autoprefixer()])
   .process(readFileSync(join(root,'src/app/globals.css'),'utf8'),{from:join(root,'src/app/globals.css')})).css + fontCss;
 const fallbackTree = postcss.parse(css);
+// Simulate a browser that ignores unsupported feature blocks/declarations.
+// The base semantic tokens must provide opaque surfaces without either feature.
 fallbackTree.walkAtRules('supports',rule=>{if(rule.params.includes('backdrop-filter'))rule.remove()});
+fallbackTree.walkDecls(/^(?:-webkit-)?backdrop-filter$/,decl=>decl.remove());
 const fallback = fallbackTree.toString();
 const server = createServer((req,res)=>{
  const url = new URL(req.url,'http://127.0.0.1');
@@ -156,8 +159,12 @@ try{
   for(const [name,selector] of [['primary','[data-testid="material-card"] h3'],['secondary','[data-testid="material-card"] .text-text-2'],['tertiary','[data-testid="material-card"] .text-text-3']]){
    const ratio=contrast(await textRgb(page,selector),bg);ok(theme+' '+name+' composited contrast AA',ratio>=4.5,ratio.toFixed(2));
   }
-  const field=page.getByLabel('Nombre de prueba');await field.fill('Texto nítido');await field.focus();
-  const focus=await field.evaluate(el=>getComputedStyle(el).boxShadow);ok(theme+' field has keyboard focus',focus!=='none');
+  const field=page.getByLabel('Nombre de prueba');
+  const unfocused=await field.evaluate(el=>getComputedStyle(el).boxShadow);
+  await page.getByRole('button',{name:'Abrir diálogo'}).focus();await page.keyboard.press('Tab');
+  await page.waitForFunction(before=>{const el=document.getElementById('name');return document.activeElement===el&&el.matches(':focus-visible')&&getComputedStyle(el).boxShadow!==before},unfocused);
+  const focus=await field.evaluate(el=>getComputedStyle(el).boxShadow);ok(theme+' field has visible keyboard focus',focus!=='none'&&focus!==unfocused);
+  await field.fill('Texto nítido');
   ok(theme+' input remains editable',await field.inputValue()==='Texto nítido');
   await page.getByRole('button',{name:'Abrir diálogo'}).click();const dialog=page.getByRole('dialog');
   const raised=await dialog.evaluate(el=>{const c=getComputedStyle(el);return {blur:c.backdropFilter||c.webkitBackdropFilter,bg:c.backgroundColor}});
@@ -192,8 +199,11 @@ try{
   await page.setViewportSize({width:1440,height:900});
  }
  await page.goto(base+'/?theme=light&fallback');await page.getByTestId('material-card').waitFor();
- const opaque=await page.getByTestId('material-card').evaluate(el=>getComputedStyle(el).backgroundColor);
- ok('unsupported browser opaque fallback',!opaque.includes('/')&&!opaque.startsWith('rgba'),opaque);
+ for(const [name,selector] of [['panel','[data-testid="material-card"]'],['navigation','.glass-nav'],['workspace','.glass-workspace::before']]){
+  const opaque=await page.evaluate(selector=>{const pseudo=selector.endsWith('::before');const el=document.querySelector(selector.replace('::before',''));const c=getComputedStyle(el,pseudo?'::before':null);return {bg:c.backgroundColor,blur:c.backdropFilter||c.webkitBackdropFilter||'none'}},selector);
+  ok('unsupported browser '+name+' opaque fallback',!opaque.bg.includes('/')&&!opaque.bg.startsWith('rgba'),opaque.bg);
+  ok('unsupported browser '+name+' has no blur',opaque.blur==='none',opaque.blur);
+ }
  await page.emulateMedia({reducedMotion:'reduce'});await page.goto(base+'/?theme=dark');await page.getByTestId('material-card').waitFor();
  const motion=await page.getByRole('button',{name:'Abrir diálogo'}).evaluate(el=>parseFloat(getComputedStyle(el).transitionDuration));
  ok('reduced motion respected',motion<.01,String(motion));

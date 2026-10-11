@@ -422,7 +422,7 @@
 
 /* El vidrio usa transparencia solo cuando el navegador puede difuminar lo
    que queda detrás. Sin soporte permanece el fallback opaco de :root. */
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+@supports (background-color: color-mix(in srgb, white 50%, transparent)) and ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root {
     --glass-bg: color-mix(in srgb, var(--bg) 64%, transparent);
     --glass-subtle: color-mix(in srgb, var(--bg-subtle) 48%, transparent);
@@ -482,7 +482,7 @@
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
 }
 .glass-nav {
-  background-color: color-mix(in srgb, var(--bg-subtle) 88%, transparent);
+  background-color: var(--glass-subtle);
   background-image: linear-gradient(145deg, rgba(191, 224, 240, 0.09), transparent 40%, rgba(61, 146, 148, 0.04));
   border: 1px solid rgba(184, 211, 236, 0.16);
   box-shadow: 0 12px 32px -18px rgba(4, 14, 30, 0.4), inset 0 1px 0 rgba(205, 231, 246, 0.12);
@@ -586,10 +586,11 @@
     min-width: 44px;
   }
 }
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .glass-nav {
-    background-color: var(--bg-subtle);
+@media (max-width: 1279px) {
+  .glass-contact-drawer {
+    background-image: linear-gradient(145deg, var(--glass-reflection), transparent 55%);
+    -webkit-backdrop-filter: blur(var(--glass-pop-blur)) saturate(var(--glass-saturation));
+    backdrop-filter: blur(var(--glass-pop-blur)) saturate(var(--glass-saturation));
   }
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
@@ -603,7 +604,7 @@
     --glass-chat: var(--chat-bg);
     --glass-sheet: var(--bg);
   }
-  .glass-panel, .glass-bar, .bg-popover, .glass-nav, .glass-workspace::before {
+  .glass-panel, .glass-bar, .bg-popover, .glass-nav, .glass-contact-drawer, .glass-workspace::before {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background-image: none;

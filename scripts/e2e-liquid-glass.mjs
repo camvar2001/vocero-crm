@@ -33,7 +33,8 @@ import {Textarea} from '@/components/ui/textarea';
 import {InmobChatClient} from '@/components/inmob/chat-client';
 import {InboxClient} from '@/components/inbox/inbox-client';
 import {DEFAULT_BRANDING,accentCssVariables} from '@/lib/branding';
-const theme = new URLSearchParams(location.search).get('theme') || 'light';
+const theme = new URLSearchParams(location.search).get('theme') || /(?:^|; )fixture_theme=(light|dark)/.exec(document.cookie)?.[1] || 'light';
+document.cookie = 'fixture_theme='+theme+';path=/;samesite=lax';
 const brand = {...DEFAULT_BRANDING, name:'isIA', accent:'#007A80'};
 const style = document.createElement('style');
 style.textContent = accentCssVariables(brand.accent);
@@ -316,6 +317,7 @@ try{
   ok(theme+' mobile inbox ignores desktop rail and fills viewport',Math.round((await list.boundingBox()).width)===375&&await page.getByLabel('Buscar conversación').isVisible());
   await page.getByRole('button',{name:'Ajustar bandeja',exact:true}).click();await page.getByRole('button',{name:'Restablecer tamaños'}).click();await page.getByRole('button',{name:'Cerrar ajustes de vista'}).click();
   await page.setViewportSize({width:1440,height:900});
+  ok(theme+' theme remains selected after reload and navigation',await page.evaluate(()=>document.documentElement.dataset.theme)===theme);
   await page.screenshot({path:join(output,'inbox-'+theme+'-adjustable.png')});
  }
  await page.goto(base+'/inmob/buscador?history');await page.getByText('Respuesta de prueba 29',{exact:true}).waitFor();

@@ -319,6 +319,8 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const infoRef = useRef<HTMLDialogElement>(null);
   const infoTrigger = useRef<HTMLButtonElement>(null);
+  const alertRef = useRef<HTMLDivElement>(null);
+  const [alertHeight, setAlertHeight] = useState(0);
   useEffect(() => { if (infoOpen) infoRef.current?.showModal(); }, [infoOpen]);
   const [chat, setChat] = useState<InmobChat | null>(null);
   const [turns, setTurns] = useState<InmobTurn[]>([]);
@@ -426,7 +428,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [turns, submitting]);
+  }, [turns, submitting, alertHeight]);
 
   const hasRunning = turns.some((turn) => turn.status === "running");
   const recoveryBlocksSend = Boolean(recovery && (recovery.state === "pending" || recovery.state === "rejected"));
@@ -434,6 +436,15 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
     (turn) => turn.status === "uncertain" && turn.message === draft.trim()
   );
   const canSend = Boolean(draft.trim()) && draft.length <= 4000 && !loading && !submitting && !hasRunning && !recoveryBlocksSend && !repeatsUncertain && Boolean(chat);
+  useEffect(() => {
+    const element = alertRef.current;
+    if (!element) { setAlertHeight(0); return; }
+    const measure = () => setAlertHeight(element.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [requestError, repeatsUncertain]);
   const needsRefresh = hasRunning || turns.some((turn) => turn.status === "uncertain") || Boolean(recovery);
 
   const recoveryNeedsRefresh = Boolean(recovery && recovery.state !== "not_persisted");
@@ -571,7 +582,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
   }
 
   return (
-    <section aria-labelledby="inmob-chat-title" className="inmob-chat relative h-full min-h-0" style={{ "--chat-header-height": `${layout.headerHeight}px`, "--chat-composer-height": `${layout.composerHeight}px` } as CSSProperties}>
+    <section aria-labelledby="inmob-chat-title" className="inmob-chat relative h-full min-h-0" style={{ "--chat-header-height": `${layout.headerHeight}px`, "--chat-composer-height": `${layout.composerHeight}px`, "--chat-alert-height": `${alertHeight}px` } as CSSProperties}>
       <header className="glass-chat-bar inmob-chat-header">
         <div className="mx-auto flex h-full max-w-5xl items-center gap-2 sm:gap-3">
           <span className="glass-floating flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand-text">
@@ -680,7 +691,7 @@ export function InmobChatClient({ agent }: { agent: InmobAgent }) {
       <footer className="glass-chat-bar inmob-chat-footer">
         <ResizeHandle label="Ajustar altura para redactar" axis="y" reverse value={layout.composerHeight} {...VIEW_LIMITS.composerHeight} defaultValue={VIEW_LIMITS.composerHeight.default} onChange={(composerHeight, persist) => update({ composerHeight }, persist)} className="inmob-composer-resize" />
         <div className="mx-auto h-full max-w-4xl">
-          {(repeatsUncertain || requestError) && <div className="inmob-composer-alert glass-floating rounded-xl p-3">
+          {(repeatsUncertain || requestError) && <div ref={alertRef} className="inmob-composer-alert glass-floating rounded-xl p-3">
             {repeatsUncertain && <p role="alert" className="text-xs leading-5 text-warning-text">No recibimos la confirmación de esta acción. Revisa si ya se guardó o escribe otra consulta.</p>}
             {requestError && <p role="alert" className="text-xs leading-5 text-danger-text">{requestError}</p>}
           </div>}

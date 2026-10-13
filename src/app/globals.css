@@ -778,9 +778,9 @@ button.glass-floating:focus-visible, .view-resize:focus-visible {
   position: absolute;
   inset: 0;
   padding-top: calc(var(--chat-header-effective) + 16px);
-  padding-bottom: calc(var(--chat-composer-effective) + env(safe-area-inset-bottom, 0px) + 16px);
+  padding-bottom: calc(var(--chat-composer-effective) + env(safe-area-inset-bottom, 0px) + var(--chat-alert-height, 0px) + 20px);
   scroll-padding-top: calc(var(--chat-header-effective) + 16px);
-  scroll-padding-bottom: calc(var(--chat-composer-effective) + 16px);
+  scroll-padding-bottom: calc(var(--chat-composer-effective) + env(safe-area-inset-bottom, 0px) + var(--chat-alert-height, 0px) + 20px);
   background-image: radial-gradient(ellipse at 90% 38%, var(--canvas-cyan), transparent 60%), radial-gradient(ellipse at 15% 86%, var(--canvas-warm), transparent 65%);
 }
 .inmob-chat-footer {

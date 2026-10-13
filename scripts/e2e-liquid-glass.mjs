@@ -358,6 +358,11 @@ try{
  const alertBox=await page.locator('.inmob-composer-alert').boundingBox();
  ok('send failure alert does not cover last message',finalReplyBox.y+finalReplyBox.height<=alertBox.y,JSON.stringify({messageBottom:finalReplyBox.y+finalReplyBox.height,alertTop:alertBox.y}));
  ok('send failure retains draft without automatic repost',await page.getByLabel('Mensaje para Buscador').inputValue()==='Prueba segura de fallo'&&chatPosts===1,String(chatPosts));
+ const anotherTab=await context.newPage();await anotherTab.goto(base+'/inmob/secretaria');await anotherTab.getByLabel('Mensaje para Secretaria').waitFor();
+ await anotherTab.getByRole('separator',{name:'Ajustar altura de la cabecera'}).press('ArrowDown');
+ await page.waitForFunction(()=>document.querySelector('.inmob-chat-header').getBoundingClientRect().height===72);
+ ok('another tab updates the shared browser preference',await page.locator('.inmob-chat-header').evaluate(el=>el.getBoundingClientRect().height===72));
+ await anotherTab.close();await page.getByRole('separator',{name:'Ajustar altura de la cabecera'}).press('Home');
  ok('zero browser runtime errors',errors.length===0,errors.join('; '));
  console.log(JSON.stringify({checks,failures,errors}));
  writeFileSync(join(output,'result.json'),JSON.stringify({checks,failures,errors},null,2));

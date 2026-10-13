@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, PanelRight } from "lucide-react";
 import { cn, formatPhone } from "@/lib/utils";
@@ -13,6 +13,9 @@ import { ConversationList } from "./conversation-list";
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
+import { useViewLayout } from "@/components/view-layout";
+import { ResizeHandle } from "@/components/resize-handle";
+import { VIEW_LIMITS } from "@/lib/view-layout";
 
 /**
  * Texto que ya salió del compositor pero cuyo POST todavía viaja. Existe solo
@@ -37,6 +40,7 @@ const isWideEnoughForPanel = () =>
 
 export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   const multiChannel = channels.length > 1;
+  const { layout, update } = useViewLayout();
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
   );
@@ -53,14 +57,15 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
 
   useEffect(() => {
     if (!isWideEnoughForPanel()) return;
-    setPanelOpen(localStorage.getItem("vocero.panelOpen") !== "false");
+    try { setPanelOpen(localStorage.getItem("vocero.panelOpen") !== "false"); }
+    catch { /* Sin storage el cajón permanece cerrado y disponible. */ }
   }, []);
   const togglePanel = useCallback((open: boolean) => {
     setPanelOpen(open);
     // La preferencia es de escritorio: abrir el cajón en el teléfono no debe
     // reescribir cómo queda la Bandeja en la computadora.
     if (isWideEnoughForPanel()) {
-      localStorage.setItem("vocero.panelOpen", String(open));
+      try { localStorage.setItem("vocero.panelOpen", String(open)); } catch { /* Preferencia en memoria. */ }
     }
   }, []);
   const selectedIdRef = useRef<string | null>(null);
@@ -272,12 +277,14 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   );
 
   return (
-    <div className="flex h-full">
+    <div className="inbox-layout flex h-full min-w-0" style={{ "--inbox-width": `${layout.inboxWidth}px`, "--inbox-details-desktop": panelOpen && selected ? "320px" : "0px" } as CSSProperties}>
       {/* Móvil: una columna a la vez. La lista cede la pantalla completa al
           hilo en cuanto hay conversación elegida (patrón maestro-detalle). */}
       <section
+        aria-label="Lista de conversaciones"
+        data-collapsed={layout.inboxCollapsed}
         className={cn(
-          "glass-bar w-full shrink-0 overflow-hidden border-r md:w-[300px] lg:w-[360px]",
+          "glass-bar inbox-conversation-panel relative w-full shrink-0 overflow-hidden border-r",
           selected && "max-md:hidden"
         )}
       >
@@ -287,7 +294,10 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
           selectedId={selectedId}
           onSelect={select}
           onSeeded={() => void refetchConversations()}
+          collapsed={layout.inboxCollapsed}
+          onToggleCollapsed={() => update({ inboxCollapsed: !layout.inboxCollapsed })}
         />
+        {!layout.inboxCollapsed && <ResizeHandle label="Ajustar ancho de la lista de chats" axis="x" value={layout.inboxWidth} {...VIEW_LIMITS.inboxWidth} defaultValue={VIEW_LIMITS.inboxWidth.default} onChange={(inboxWidth, persist) => update({ inboxWidth }, persist)} className="hidden md:block" />}
       </section>
 
       <section

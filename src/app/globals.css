@@ -825,6 +825,20 @@ button.glass-floating:focus-visible, .view-resize:focus-visible {
 .view-resize-y span { width: 48px; height: 3px; margin: 3px auto; }
 .inmob-header-resize { bottom: -5px; }
 .inmob-composer-resize { top: -5px; }
+@media (min-width: 768px) {
+  .glass-icon-button.hidden.md\:flex { display: flex; }
+  .inbox-conversation-panel { width: min(var(--inbox-width, 360px), max(80px, calc(100% - var(--inbox-details-space, 0px) - 320px))); }
+  .inbox-conversation-panel[data-collapsed="true"] { width: 80px; }
+  .conversation-list[data-collapsed="true"] .conversation-list-full { display: none; }
+  .conversation-list[data-collapsed="true"] .conversation-list-header { padding: 12px 8px; }
+  .conversation-list[data-collapsed="true"] .conversation-list-tools { flex-direction: column; margin: 0; }
+  .conversation-list[data-collapsed="true"] .conversation-list-collapse { margin-left: 0; }
+  .conversation-list[data-collapsed="true"] .conversation-list-row { justify-content: center; padding: 10px 8px; }
+  .conversation-list[data-collapsed="true"] .conversation-list-compact-badge { display: flex; }
+}
+@media (min-width: 1280px) {
+  .inbox-layout { --inbox-details-space: var(--inbox-details-desktop, 0px); }
+}
 @media (min-width: 1024px) {
   .glass-icon-button.hidden.lg\:flex { display: flex; }
   .glass-icon-button.lg\:hidden { display: none; }

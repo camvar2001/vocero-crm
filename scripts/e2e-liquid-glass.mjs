@@ -31,6 +31,7 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
 import {InmobChatClient} from '@/components/inmob/chat-client';
+import {InboxClient} from '@/components/inbox/inbox-client';
 import {DEFAULT_BRANDING,accentCssVariables} from '@/lib/branding';
 const theme = new URLSearchParams(location.search).get('theme') || 'light';
 const brand = {...DEFAULT_BRANDING, name:'isIA', accent:'#007A80'};
@@ -42,6 +43,7 @@ style.textContent = accentCssVariables(brand.accent);
 function Page() {
  const path = usePathname();
  const [dialog,setDialog]=useState(false);
+ if(path==='/inbox') return <InboxClient channels={['telegram']}/>;
  if(path.includes('/inmob/')) return <InmobChatClient key={path} agent={path.endsWith('secretaria')?'secretaria':'buscador'}/>;
  return <section className="h-full overflow-y-auto p-4 sm:p-6" aria-label="Muestra de material">
    <header className="mb-6"><p className="kicker">VOCERO · ESTUDIO DE MATERIAL</p><h1 className="mt-2 text-2xl font-bold">Tu espacio, con otra luz.</h1><p className="mt-2 text-sm text-text-2">Cristal suave. Todo lo que necesitas, a la vista.</p></header>
@@ -56,6 +58,7 @@ createRoot(document.getElementById('root')).render(<AppShell branding={brand} us
 `;
 const navigation = `import React,{useSyncExternalStore} from 'react';
 export function usePathname(){return useSyncExternalStore(cb=>{window.addEventListener('popstate',cb);return()=>window.removeEventListener('popstate',cb)},()=>location.pathname)}
+export function useSearchParams(){return new URLSearchParams(location.search)}
 export function useRouter(){return {push:(url)=>{history.pushState(null,'',url);window.dispatchEvent(new Event('popstate'))},refresh:()=>{}}}`;
 const link = `import React from 'react'; export default function Link({href,children,...props}){return <a href={href} {...props} onClick={e=>{if(e.metaKey||e.ctrlKey)return;e.preventDefault();history.pushState(null,'',href);window.dispatchEvent(new Event('popstate'))}}>{children}</a>}`;
 const bundle = await build({
@@ -83,6 +86,9 @@ fallbackTree.walkAtRules('supports',rule=>{if(rule.params.includes('backdrop-fil
 fallbackTree.walkDecls(/^(?:-webkit-)?backdrop-filter$/,decl=>decl.remove());
 const fallback = fallbackTree.toString();
 let chatPosts = 0;
+let inboxPosts = 0;
+let marks = 0;
+const conversations=[{id:'fixture_ana',contact:{id:'contact_ana',name:'Ana de prueba',phone:null},unreadCount:0},{id:'fixture_luis',contact:{id:'contact_luis',name:'Luis de prueba',phone:null},unreadCount:2}].map(c=>({...c,channel:'telegram',stageName:'Nuevo',aiEnabled:false,handoffAt:null,handoffReason:null,lastInboundAt:null,lastMessageAt:null,windowOpen:true,windowRemainingMs:86400000,preview:'Conversación sintética de prueba',anuncio:null}));
 const server = createServer((req,res)=>{
  const url = new URL(req.url,'http://127.0.0.1');
  if(['/branding/isia/logo-light.svg','/branding/isia/logo-dark.svg','/branding/isia/icon.svg'].includes(url.pathname)){
@@ -93,7 +99,16 @@ const server = createServer((req,res)=>{
  }
  if(url.pathname==='/bundle.js'){res.setHeader('content-type','text/javascript');res.end(bundle.outputFiles[0].contents);return}
  if(url.pathname==='/style.css'){res.setHeader('content-type','text/css');res.end(url.searchParams.has('fallback')?fallback:css);return}
- if(url.pathname==='/api/conversations'){res.setHeader('content-type','application/json');res.end('{"conversations":[]}');return}
+ if(url.pathname==='/api/conversations'){res.setHeader('content-type','application/json');res.end(JSON.stringify({conversations}));return}
+ if(url.pathname.startsWith('/api/conversations/')){res.setHeader('content-type','application/json');
+  if(req.method==='POST'){inboxPosts++;res.statusCode=405;res.end('{}');return}
+  if(req.method==='PATCH'){marks++;res.end('{}');return}
+  res.end(JSON.stringify({messages:[]}));return;
+ }
+ if(url.pathname==='/api/templates'){res.setHeader('content-type','application/json');res.end('{"templates":[]}');return}
+ if(url.pathname==='/api/pipeline/stages'){res.setHeader('content-type','application/json');res.end('{"stages":[]}');return}
+ if(url.pathname.startsWith('/api/contacts/')){res.setHeader('content-type','application/json');res.end('{"contact":{"notes":"","ficha":{}},"lead":null,"stage":null,"anuncio":null}');return}
+ if(url.pathname==='/api/agent/brain-status'){res.statusCode=404;res.end('{}');return}
  if(url.pathname.startsWith('/api/inmob/chats/')){res.setHeader('content-type','application/json');
    if(req.method==='POST'){chatPosts++;res.statusCode=405;res.end('{}');return}
    if(req.headers.referer?.includes('failure')){res.statusCode=503;res.end('{"error":"fixture"}');return}
@@ -203,6 +218,7 @@ try{
   await page.getByRole('link',{name:'Secretaria',exact:true}).click();await page.getByLabel('Mensaje para Secretaria').waitFor();
   ok(theme+' two agents share chosen heights',(await dimensions()).header===96&&(await dimensions()).composer===104);
   await page.getByRole('link',{name:'Buscador',exact:true}).click();await page.getByLabel('Mensaje para Buscador').waitFor();
+  await page.waitForFunction(()=>{const field=document.querySelector('[aria-label="Mensaje para Buscador"]');return field&&!field.disabled});
   ok(theme+' navigation keeps previous agent draft',await page.getByLabel('Mensaje para Buscador').inputValue()==='Borrador local sin envío');
   await page.getByRole('button',{name:'Expandir menú',exact:true}).click();
   ok(theme+' expanding restores chosen width',(await dimensions()).nav===288);
@@ -246,8 +262,46 @@ try{
     await page.getByLabel('Mensaje para Buscador').waitFor();
    }
   }
-  await page.setViewportSize({width:375,height:812});await page.screenshot({path:join(output,'glass-'+theme+'-mobile.png')});
+  await page.setViewportSize({width:375,height:812});
+  await page.waitForFunction(()=>{const el=document.querySelector('.view-nav');const c=getComputedStyle(el);return c.visibility==='hidden'&&new DOMMatrixReadOnly(c.transform).m41<=-el.getBoundingClientRect().width+1});
+  await page.screenshot({path:join(output,'glass-'+theme+'-mobile.png')});
   await page.setViewportSize({width:1440,height:900});
+  await page.getByRole('link',{name:/^Bandeja/}).click();await page.getByRole('button',{name:'Ana de prueba',exact:true}).waitFor();
+  const list=page.getByRole('region',{name:'Lista de conversaciones'});
+  ok(theme+' inbox defaults to expanded 360px',Math.round((await list.boundingBox()).width)===360);
+  await page.getByRole('button',{name:'Ana de prueba',exact:true}).click();
+  const reply=page.getByPlaceholder('Escribe una respuesta…');await reply.fill('Borrador de bandeja sin envío');
+  const markedBefore=marks;
+  await page.getByLabel('Buscar conversación').fill('Ana');
+  const listHandle=page.getByRole('separator',{name:'Ajustar ancho de la lista de chats',exact:true});
+  await listHandle.press('ArrowRight');await dragHandle(listHandle,40,0);
+  ok(theme+' inbox width supports keyboard and pointer',Math.round((await list.boundingBox()).width)===408);
+  await page.getByRole('button',{name:'Retraer lista de chats',exact:true}).click();
+  ok(theme+' inbox collapses to labeled avatar rail',Math.round((await list.boundingBox()).width)===80&&await page.getByRole('button',{name:'Ana de prueba',exact:true}).isVisible());
+  ok(theme+' inbox resize and collapse preserve composer draft',await reply.inputValue()==='Borrador de bandeja sin envío');
+  await page.getByRole('button',{name:'Retraer menú',exact:true}).click();
+  ok(theme+' main menu and chat list collapse independently',Math.round((await page.locator('.view-nav').boundingBox()).width)===72&&Math.round((await list.boundingBox()).width)===80);
+  await page.getByRole('button',{name:'Expandir lista de chats',exact:true}).click();
+  ok(theme+' expanded chat list restores size and filter',Math.round((await list.boundingBox()).width)===408&&await page.getByLabel('Buscar conversación').inputValue()==='Ana'&&await page.getByRole('button',{name:/Luis de prueba/}).count()===0);
+  ok(theme+' layout actions do not mark other conversations',marks===markedBefore);
+  await page.getByRole('button',{name:'Retraer lista de chats',exact:true}).click();await page.reload();await page.getByRole('button',{name:'Ana de prueba',exact:true}).waitFor();
+  ok(theme+' both collapse preferences survive reload',Math.round((await list.boundingBox()).width)===80&&Math.round((await page.locator('.view-nav').boundingBox()).width)===72);
+  await page.getByRole('button',{name:'Ajustar bandeja',exact:true}).click();
+  await page.getByRole('slider',{name:'Ancho de la lista de chats'}).press('End');
+  await page.getByRole('checkbox',{name:'Lista de chats retraída',exact:true}).uncheck();
+  await page.getByRole('slider',{name:'Ancho del menú',exact:true}).press('End');
+  await page.getByRole('checkbox',{name:'Menú retraído en escritorio',exact:true}).uncheck();
+  await page.getByRole('button',{name:'Cerrar ajustes de vista'}).click();
+  await page.getByRole('button',{name:'Ana de prueba',exact:true}).click();
+  const threadWidth=await reply.evaluate(el=>el.closest('.inbox-layout').children[1].getBoundingClientRect().width);
+  ok(theme+' maximum widths still reserve a usable thread',threadWidth>=319,threadWidth.toFixed(2));
+  await page.getByRole('button',{name:'Ocultar panel',exact:true}).click();
+  await page.setViewportSize({width:375,height:812});
+  await page.getByRole('button',{name:'Volver a las conversaciones'}).click();
+  ok(theme+' mobile inbox ignores desktop rail and fills viewport',Math.round((await list.boundingBox()).width)===375&&await page.getByLabel('Buscar conversación').isVisible());
+  await page.getByRole('button',{name:'Ajustar bandeja',exact:true}).click();await page.getByRole('button',{name:'Restablecer tamaños'}).click();await page.getByRole('button',{name:'Cerrar ajustes de vista'}).click();
+  await page.setViewportSize({width:1440,height:900});
+  await page.screenshot({path:join(output,'inbox-'+theme+'-adjustable.png')});
  }
  await page.goto(base+'/inmob/buscador?history');await page.getByText('Respuesta de prueba 29',{exact:true}).waitFor();
  const last=page.getByText('Respuesta de prueba 29',{exact:true});await last.scrollIntoViewIfNeeded();
@@ -257,6 +311,7 @@ try{
  const firstBox=await page.getByText('Consulta de prueba 0',{exact:true}).boundingBox(),headerBox=await page.locator('.inmob-chat-header').boundingBox();
  ok('first message can be read below floating header',firstBox.y>=headerBox.y+headerBox.height);
  ok('layout actions never post a chat message',chatPosts===0,String(chatPosts));
+ ok('inbox layout actions never send messages',inboxPosts===0,String(inboxPosts));
  const corruptContext=await browser.newContext({viewport:{width:1440,height:900}});
  await corruptContext.addInitScript(()=>localStorage.setItem('vocero:view-layout:v1','{broken'));
  const corruptPage=await corruptContext.newPage();await corruptPage.goto(base+'/inmob/buscador');await corruptPage.getByLabel('Mensaje para Buscador').waitFor();

@@ -3,6 +3,8 @@ export type ViewLayout = {
   version: 1;
   navWidth: number;
   navCollapsed: boolean;
+  inboxWidth: number;
+  inboxCollapsed: boolean;
   headerHeight: number;
   composerHeight: number;
 };
@@ -10,12 +12,13 @@ export type ViewLayout = {
 export const VIEW_LAYOUT_KEY = "vocero:view-layout:v1";
 export const VIEW_LIMITS = {
   navWidth: { min: 200, max: 360, default: 240 },
+  inboxWidth: { min: 260, max: 480, default: 360 },
   headerHeight: { min: 64, max: 144, default: 64 },
   composerHeight: { min: 64, max: 220, default: 64 },
 } as const;
 export type ViewDimension = keyof typeof VIEW_LIMITS;
 export const DEFAULT_VIEW_LAYOUT: ViewLayout = {
-  version: 1, navWidth: 240, navCollapsed: false, headerHeight: 64, composerHeight: 64,
+  version: 1, navWidth: 240, navCollapsed: false, inboxWidth: 360, inboxCollapsed: false, headerHeight: 64, composerHeight: 64,
 };
 
 export function normalizeViewLayout(value: unknown): ViewLayout {
@@ -31,5 +34,6 @@ export function normalizeViewLayout(value: unknown): ViewLayout {
     }
   }
   result.navCollapsed = candidate.navCollapsed === true;
+  result.inboxCollapsed = candidate.inboxCollapsed === true;
   return result;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Megaphone, Search, Sparkles, UserRound, X } from "lucide-react";
+import { Megaphone, PanelLeftClose, PanelLeftOpen, Search, Sparkles, UserRound, X } from "lucide-react";
 import type { ConversationDto } from "@/lib/types";
 import { etiquetaDeOrigen, titularDeOrigen } from "@/lib/anuncios";
 import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { formatTime, previewText } from "./helpers";
+import { ViewLayoutControls } from "@/components/view-layout";
 
 /* Puntos de etapa: los tokens del tema, no hex copiados del tema claro —
    así siguen al acento white-label y se recalculan en oscuro. */
@@ -77,6 +78,8 @@ export function ConversationList({
   selectedId,
   onSelect,
   onSeeded,
+  collapsed = false,
+  onToggleCollapsed,
 }: {
   conversations: ConversationDto[] | null;
   /** Canales encendidos en esta instancia (ADR-001). */
@@ -84,6 +87,8 @@ export function ConversationList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onSeeded: () => void;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "unread" | "anuncios">("all");
@@ -158,13 +163,13 @@ export function ConversationList({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="glass-bar border-b px-4 pb-3 pt-4">
-        <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-[17px] font-bold tracking-tight">Bandeja</h2>
-          <span className="font-mono text-[12px] text-text-3">{conversations.length}</span>
+    <div className="conversation-list flex h-full flex-col" data-collapsed={collapsed}>
+      <header className="glass-bar conversation-list-header border-b px-4 pb-3 pt-4">
+        <div className="conversation-list-tools mb-3 flex flex-wrap items-center gap-2">
+          <h2 className="conversation-list-full text-[17px] font-bold tracking-tight">Bandeja</h2>
+          <span className="conversation-list-full font-mono text-[12px] text-text-3">{conversations.length}</span>
           {multiChannel && (
-            <div className="ml-auto flex items-center gap-1">
+            <div className="conversation-list-full order-last flex w-full flex-wrap items-center gap-1">
               {channels.map((ch) => {
                 const on = inbox === ch;
                 return (
@@ -196,8 +201,10 @@ export function ConversationList({
               })}
             </div>
           )}
+          {onToggleCollapsed && <button type="button" aria-label={collapsed ? "Expandir lista de chats" : "Retraer lista de chats"} aria-expanded={!collapsed} title={collapsed ? "Expandir lista de chats" : "Retraer lista de chats"} onClick={onToggleCollapsed} className="glass-floating glass-icon-button conversation-list-collapse ml-auto hidden md:flex">{collapsed ? <PanelLeftOpen className="h-[18px] w-[18px]" aria-hidden="true" /> : <PanelLeftClose className="h-[18px] w-[18px]" aria-hidden="true" />}</button>}
+          <ViewLayoutControls inbox />
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-border-strong bg-chip px-3.5 py-[7px] shadow-sm transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft">
+        <div className="conversation-list-full flex items-center gap-2 rounded-full border border-border-strong bg-chip px-3.5 py-[7px] shadow-sm transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft">
           <Search className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
           <input
             ref={inputRef}
@@ -222,7 +229,7 @@ export function ConversationList({
       {/* Envuelve: con el filtro de anuncios, los tres botones y el selector de
           etapa no caben en una columna de 300-360 px, y el selector se
           aplastaba hasta dejar solo la flecha. */}
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 border-b px-4 py-2.5">
+      <div className="conversation-list-full flex flex-wrap items-center gap-x-1.5 gap-y-2 border-b px-4 py-2.5">
         {filtros.map((f) => (
           <button
             key={f.id}
@@ -290,9 +297,12 @@ export function ConversationList({
                     <span className="absolute inset-y-0 left-0 w-[3px] bg-brand" />
                   )}
                   <button
+                    aria-label={`${c.contact.name}${unread ? ` · ${c.unreadCount} sin leer` : ""}`}
+                    aria-pressed={active}
+                    title={`${c.contact.name}${unread ? ` · ${c.unreadCount} sin leer` : ""}`}
                     onClick={() => onSelect(c.id)}
                     className={cn(
-                      "flex w-full items-start gap-[11px] px-4 py-[var(--row-py)] text-left transition-colors",
+                      "conversation-list-row flex w-full items-start gap-[11px] px-4 py-[var(--row-py)] text-left transition-colors",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       active ? "bg-[var(--bg-active)]" : "hover:bg-row-hover"
                     )}
@@ -302,8 +312,9 @@ export function ConversationList({
                       {c.windowOpen && (
                         <span className="absolute bottom-0 right-0 h-[11px] w-[11px] rounded-full border-[2.5px] border-background bg-success" />
                       )}
+                      {unread && <span aria-hidden="true" className="conversation-list-compact-badge absolute -right-1 -top-1 hidden h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-brand-fg">{c.unreadCount}</span>}
                     </span>
-                    <span className="min-w-0 flex-1">
+                    <span className="conversation-list-full min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-1.5">
                           {multiChannel && <ChannelBadge channel={c.channel} />}

@@ -188,7 +188,7 @@ export function AppNav({
         </button>
         <div className="view-nav-full min-w-0 flex-1 px-1">
           <BrandLogo branding={branding} />
-          <span className="kicker mt-2 block">CRM · WhatsApp</span>
+          <span className="kicker mt-2 block !text-text-2">CRM · WhatsApp</span>
         </div>
         <div className="view-nav-compact hidden" title={versionTitle(branding.name, version)}><BrandTile branding={branding} className="h-8 w-8" /></div>
         <button type="button" aria-label={layout.navCollapsed ? "Expandir menú" : "Retraer menú"} aria-expanded={!layout.navCollapsed} title={layout.navCollapsed ? "Expandir menú" : "Retraer menú"} onClick={() => update({ navCollapsed: !layout.navCollapsed })} className="glass-floating glass-icon-button hidden lg:flex">
@@ -234,7 +234,7 @@ export function AppNav({
         </span>
         <span className="view-nav-full min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold">{userName}</span>
-          <span className="block truncate text-[11px] text-text-3">
+          <span className="block truncate text-[11px] text-text-2">
             {role === "owner" ? "Propietario" : "Equipo"} · En línea
           </span>
         </span>

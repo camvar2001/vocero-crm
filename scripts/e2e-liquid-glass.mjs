@@ -169,6 +169,11 @@ try{
   const logoPath=await logo.getAttribute('src');ok(theme+' navy sidebar uses official dark variant',logoPath==='/branding/isia/logo-dark.svg');
   const palette=await page.evaluate(()=>({accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),sky:getComputedStyle(document.documentElement).getPropertyValue('--isia-sky').trim()}));
   ok(theme+' official palette preserved',palette.sky==='#ecf9f9'&&(theme==='dark'||palette.accent==='#007a80'),JSON.stringify(palette));
+  const navBox=await page.locator('.view-nav').boundingBox();
+  const navSurface=pixel(await page.screenshot(),Math.floor(navBox.x+navBox.width-12),Math.floor(navBox.y+navBox.height*.66));
+  for(const [name,selector] of [['role label','.view-nav-user .block:last-child'],['brand label','.view-nav .kicker']]){
+   const ratio=contrast(await textRgb(page,selector),navSurface);ok(theme+' sidebar '+name+' composited contrast AA',ratio>=4.5,ratio.toFixed(2));
+  }
   const card=page.getByTestId('material-card');
   const material=await card.evaluate(el=>{const c=getComputedStyle(el);return{blur:c.backdropFilter||c.webkitBackdropFilter,bg:c.backgroundColor,filter:c.filter,radius:c.borderRadius}});
   ok(theme+' panel has visible background blur',/blur\((?:2\d|3\d)px\)/.test(material.blur),JSON.stringify(material));

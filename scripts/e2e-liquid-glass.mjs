@@ -263,6 +263,12 @@ try{
    }
   }
   await page.setViewportSize({width:375,height:812});
+  await page.getByRole('button',{name:'Abrir el menú'}).click();
+  await page.getByRole('button',{name:'Ajustar menú',exact:true}).click();
+  await page.getByRole('dialog',{name:'Ajustar vista',exact:true}).getByRole('slider',{name:'Altura de la cabecera'}).press('Escape');
+  await page.getByRole('dialog',{name:'Ajustar vista',exact:true}).waitFor({state:'hidden'});
+  ok(theme+' Escape closes only the modal over mobile navigation',await page.getByRole('link',{name:'Pipeline',exact:true}).isVisible()&&await page.getByRole('button',{name:'Ajustar menú',exact:true}).evaluate(el=>document.activeElement===el));
+  await page.locator('.view-nav').getByRole('button',{name:'Cerrar el menú',exact:true}).click();
   await page.waitForFunction(()=>{const el=document.querySelector('.view-nav');const c=getComputedStyle(el);return c.visibility==='hidden'&&new DOMMatrixReadOnly(c.transform).m41<=-el.getBoundingClientRect().width+1});
   await page.screenshot({path:join(output,'glass-'+theme+'-mobile.png')});
   await page.setViewportSize({width:1440,height:900});
@@ -339,6 +345,15 @@ try{
  ok('load failure visibly recoverable',await page.getByRole('button',{name:'Volver a cargar'}).isVisible());
  await page.getByRole('link',{name:'Contactos',exact:true}).click();await page.getByTestId('material-card').waitFor();
  ok('load failure does not block navigation',await page.getByTestId('material-card').isVisible());
+ await page.setViewportSize({width:1440,height:900});await page.goto(base+'/inmob/buscador?history&submit-error');
+ await page.getByText('Respuesta de prueba 29',{exact:true}).waitFor();
+ await page.getByLabel('Mensaje para Buscador').fill('Prueba segura de fallo');await page.getByRole('button',{name:'Enviar',exact:true}).click();
+ await page.waitForFunction(()=>{const field=document.querySelector('[aria-label="Mensaje para Buscador"]');return document.querySelector('.inmob-composer-alert')&&field&&!field.disabled});
+ await page.locator('.inmob-history').evaluate(el=>el.scrollTop=el.scrollHeight);
+ const finalReplyBox=await page.getByText('Respuesta de prueba 29',{exact:true}).boundingBox();
+ const alertBox=await page.locator('.inmob-composer-alert').boundingBox();
+ ok('send failure alert does not cover last message',finalReplyBox.y+finalReplyBox.height<=alertBox.y,JSON.stringify({messageBottom:finalReplyBox.y+finalReplyBox.height,alertTop:alertBox.y}));
+ ok('send failure retains draft without automatic repost',await page.getByLabel('Mensaje para Buscador').inputValue()==='Prueba segura de fallo'&&chatPosts===1,String(chatPosts));
  ok('zero browser runtime errors',errors.length===0,errors.join('; '));
  console.log(JSON.stringify({checks,failures,errors}));
  writeFileSync(join(output,'result.json'),JSON.stringify({checks,failures,errors},null,2));

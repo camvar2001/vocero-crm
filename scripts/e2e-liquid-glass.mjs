@@ -267,7 +267,9 @@ try{
   await page.getByRole('button',{name:'Ajustar menú',exact:true}).click();
   await page.getByRole('dialog',{name:'Ajustar vista',exact:true}).getByRole('slider',{name:'Altura de la cabecera'}).press('Escape');
   await page.getByRole('dialog',{name:'Ajustar vista',exact:true}).waitFor({state:'hidden'});
-  ok(theme+' Escape closes only the modal over mobile navigation',await page.getByRole('link',{name:'Pipeline',exact:true}).isVisible()&&await page.getByRole('button',{name:'Ajustar menú',exact:true}).evaluate(el=>document.activeElement===el));
+  const menuStillOpen=await page.getByRole('button',{name:'Abrir el menú'}).getAttribute('aria-expanded')==='true';
+  ok(theme+' Escape closes only the modal over mobile navigation',menuStillOpen&&await page.getByRole('button',{name:'Ajustar menú',exact:true}).evaluate(el=>document.activeElement===el));
+  if(!menuStillOpen) await page.getByRole('button',{name:'Abrir el menú'}).click();
   await page.locator('.view-nav').getByRole('button',{name:'Cerrar el menú',exact:true}).click();
   await page.waitForFunction(()=>{const el=document.querySelector('.view-nav');const c=getComputedStyle(el);return c.visibility==='hidden'&&new DOMMatrixReadOnly(c.transform).m41<=-el.getBoundingClientRect().width+1});
   await page.screenshot({path:join(output,'glass-'+theme+'-mobile.png')});

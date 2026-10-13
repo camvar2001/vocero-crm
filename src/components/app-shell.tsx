@@ -55,6 +55,9 @@ export function AppShell({
   useEffect(() => {
     if (!navOpen) return;
     const onKey = (e: KeyboardEvent) => {
+      // El diálogo nativo maneja Escape y devuelve foco al disparador del
+      // cajón. Cerrar ambos en el mismo evento escondería ese disparador.
+      if (e.defaultPrevented || (e.target instanceof Element && e.target.closest("dialog[open]"))) return;
       if (e.key === "Escape") setNavOpen(false);
     };
     window.addEventListener("keydown", onKey);

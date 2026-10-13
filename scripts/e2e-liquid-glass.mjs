@@ -301,6 +301,8 @@ try{
   await page.getByRole('checkbox',{name:'Menú retraído en escritorio',exact:true}).uncheck();
   await page.getByRole('button',{name:'Cerrar ajustes de vista'}).click();
   await page.getByRole('button',{name:'Ana de prueba',exact:true}).click();
+  if(await page.getByRole('button',{name:'Mostrar detalles',exact:true}).isVisible()) await page.getByRole('button',{name:'Mostrar detalles',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.glass-contact-drawer').getBoundingClientRect().width>=319);
   const threadWidth=await reply.evaluate(el=>el.closest('.inbox-layout').children[1].getBoundingClientRect().width);
   ok(theme+' maximum widths still reserve a usable thread',threadWidth>=319,threadWidth.toFixed(2));
   await page.getByRole('button',{name:'Ocultar panel',exact:true}).click();
@@ -347,7 +349,7 @@ try{
  ok('load failure visibly recoverable',await page.getByRole('button',{name:'Volver a cargar'}).isVisible());
  await page.getByRole('link',{name:'Contactos',exact:true}).click();await page.getByTestId('material-card').waitFor();
  ok('load failure does not block navigation',await page.getByTestId('material-card').isVisible());
- await page.setViewportSize({width:1440,height:900});await page.goto(base+'/inmob/buscador?history&submit-error');
+ await page.setViewportSize({width:375,height:812});await page.goto(base+'/inmob/buscador?history&submit-error');
  await page.getByText('Respuesta de prueba 29',{exact:true}).waitFor();
  await page.getByLabel('Mensaje para Buscador').fill('Prueba segura de fallo');await page.getByRole('button',{name:'Enviar',exact:true}).click();
  await page.waitForFunction(()=>{const field=document.querySelector('[aria-label="Mensaje para Buscador"]');return document.querySelector('.inmob-composer-alert')&&field&&!field.disabled});
